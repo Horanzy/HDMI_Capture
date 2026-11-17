@@ -1,0 +1,233 @@
+# IT68051 I2C initialisation table  (FPGA I2C master replay)
+#
+# Source : ITE68051_MEGAWIN_EVB_1.57.20200928/src/iTE6805_INI_Table.h
+#          (active, non-commented entries; macros resolved from config.h)
+#          + post-table fixed sequence extracted from iTE6805_DRV.c
+#          (iTE6805_Init_fsm / iTE6805_Init_CAOF / iTE6805_Set_Video_Tristate
+#           / iTE6805_Set_TTL_Video_Path / iTE6805_Port_Select_Body) and
+#          iTE6805_SYS.c (iTE6805_Enable_Video_Output).
+#
+# Semantics  (firmware hdmirxset() is read-modify-write!)
+#   WRITE  bank,reg,mask,val : reg <= (reg & ~mask) | val ;  mask=0xFF -> plain write
+#   WRITEF bank,reg,00,val   : reg <= val                       (firmware hdmirxwr)
+#   DELAY ms
+#   POLL  bank,reg,mask,val  : wait (reg&mask)==val, FPGA timeout=250ms then continue
+#   END
+#
+# Device I2C address: 8-bit write 0x90 / read 0x91 (7-bit 0x48),
+#   same as the ITE EVB firmware (config.h ADDR_HDMI=0x90).
+#   !! PCADR(U5.23) is pulled LOW on this board: R8 (0R pull-up to
+#   !! OVDD33) is DNP / not populated (user-confirmed decision), so only
+#   !! R6 (10k to GND) sets the level -> address 0x90 per IT68051
+#   !! datasheet Table 4-3.  (The V1.4 netlist still lists R8 as a
+#   !! footprint placeholder - it is not soldered.)
+#
+# Output mode chosen by the resolved table: eTTL_SepSync_FullBusDDR_BYPASS_CSC
+#   - QD[59:0] dual-pixel DDR, separate HSYNC/VSYNC/DE, CSC bypass (RGB passthrough)
+#   - YUV422 is NOT produced by the chip in v1; the FPGA converts RGB->YUV422.
+#   - Dual-pixel DDR requires HTotal%%4==0 (IT68051 datasheet note, Table 5-1).
+#
+# Not replayed by FPGA v1 (see docs/README.md 'not verified' list):
+#   OCLK_Cal dynamic measurement (static 0x91/0x92 approximation used),
+#   EDID RAM write (EVB EDID caps TMDS at 300MHz -> cannot advertise 2K144),
+#   MHL table, HDCP repeater, CEC runtime init, runtime INT# polling FSM.
+#
+# ---- SECTION A: iTE6805_INIT_HDMI_TABLE (verbatim, macros resolved) ----
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x22 mask=0xFF val=0x08  # RegRegRst : Register block reset
+WRITE bank=0x00 reg=0x22 mask=0xFF val=0x17  # [4]Auto Video Reset [2]Int Reset [1]Audio Reset [0]Video Reset
+WRITE bank=0x00 reg=0x23 mask=0xFF val=0x1F  # Port 0 [4]EQ Reset [3]CLKD5 Reset [2]CDR Reset [1]HDCP Reset [0]All logic Reset
+WRITE bank=0x00 reg=0x2B mask=0xFF val=0x1F  # Port 1 [4]EQ Reset [3]CLKD5 Reset [2]CDR Reset [1]HDCP Reset [0]All logic Reset
+WRITE bank=0x00 reg=0x24 mask=0xFF val=0xF8  # [7:3] MHL Logic reset
+WRITE bank=0x00 reg=0x22 mask=0xFF val=0x10  # [4]Auto Video Reset [2]Int Reset [1]Audio Reset [0]Video Reset
+WRITE bank=0x00 reg=0x23 mask=0xFF val=0xA0  # Port 0 [4]EQ Reset [3]CLKD5 Reset [2]CDR Reset [1]HDCP Reset [0]All logic Reset
+WRITE bank=0x00 reg=0x2B mask=0xFF val=0xA0  # Port 1 [4]EQ Reset [3]CLKD5 Reset [2]CDR Reset [1]HDCP Reset [0]All logic Reset
+WRITE bank=0x00 reg=0x24 mask=0xFF val=0x00  # [7:3] MHL Logic reset
+WRITE bank=0x00 reg=0x34 mask=0xFF val=0x00  # disable Reg_AutoRCLK
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x03  # 
+WRITE bank=0x00 reg=0xAA mask=0xFF val=0xEC  # 0106 add
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x03  # 
+WRITE bank=0x00 reg=0xAC mask=0xFF val=0x40  # 
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x3A mask=0xFF val=0x89  # 0406 add, 0421 modify, emily command for CED Error sensetive from 89 to 99
+WRITE bank=0x00 reg=0x49 mask=0xFF val=0xE1  # 0106 add
+WRITE bank=0x00 reg=0x43 mask=0xFF val=0x01  # 0106 add
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x04  # 0106 add
+WRITE bank=0x00 reg=0x43 mask=0xFF val=0x01  # 0106 add 0117 modify to mark
+WRITE bank=0x00 reg=0x3A mask=0xFF val=0x89  # 0406 add, 0421 modify, emily command for CED Error sensetive from 89 to 99
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x03  # 
+WRITE bank=0x00 reg=0xA8 mask=0xFF val=0x0B  # P0_ENHYS = 011
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x4F mask=0xFF val=0x84  # RCLK frequency select
+WRITE bank=0x00 reg=0x44 mask=0xFF val=0x19  # 1G
+WRITE bank=0x00 reg=0x46 mask=0xFF val=0x15  # 1P48G
+WRITE bank=0x00 reg=0x47 mask=0xFF val=0x88  # 3P4G
+WRITE bank=0x00 reg=0xD9 mask=0xFF val=0x00  # Reg_EnHwReAuthen // 0906 disable
+WRITE bank=0x00 reg=0xF0 mask=0xFF val=0x78  # Reg_DbgRSACnt[7:0]
+WRITE bank=0x00 reg=0xF1 mask=0xFF val=0x10  # RegHPMaxEcc[7:0]
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x03  # 
+WRITE bank=0x00 reg=0x3A mask=0xFF val=0x02  # set Reg_ENHEQ
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x28 mask=0xFF val=0x88  # 0106 modify
+WRITE bank=0x00 reg=0x6E mask=0xFF val=0x80  # 
+WRITE bank=0x00 reg=0x77 mask=0xFF val=0x87  # Reg_PktRec_Type, set from 83 to 87 for record DRM pkt
+WRITE bank=0x00 reg=0x7B mask=0xFF val=0x00  # RegPktFlag_Ctrl
+WRITE bank=0x00 reg=0x86 mask=0xFF val=0x00  # 0118 add
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x36 mask=0xFF val=0x06  # 
+WRITE bank=0x00 reg=0x8F mask=0xFF val=0x41  # 
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x01  # 
+WRITE bank=0x00 reg=0xC0 mask=0xFF val=0x42  # kuro fix
+WRITE bank=0x00 reg=0xC4 mask=0x70 val=0x30  # setting Reg_DlyDCLK
+WRITE bank=0x00 reg=0xC4 mask=0x80 val=0x00  # setting Reg_InvDCLK
+WRITE bank=0x00 reg=0xC5 mask=0xFF val=0x00  # tri-state
+WRITE bank=0x00 reg=0xC6 mask=0xFF val=0x00  # tri-state
+WRITE bank=0x00 reg=0xC7 mask=0xFF val=0x00  # tri-state
+WRITE bank=0x00 reg=0xC8 mask=0xFF val=0x00  # tri-state
+WRITE bank=0x00 reg=0xC9 mask=0xFF val=0x99  # 0106 modify Richard suggest 5mA, slow
+WRITE bank=0x00 reg=0xCA mask=0xFF val=0x99  # 0106 modify Richard suggest 5mA, slow
+WRITE bank=0x00 reg=0x0F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x86 mask=0x0C val=0x08  # 0118 modify, HW RD mail [IT6664, IT6805, IT6634 Audio Seeting note] by Andrew Chang
+WRITE bank=0x00 reg=0x81 mask=0x80 val=0x80  # 0125 JJ suggest
+WRITE bank=0x01 reg=0x0F mask=0x07 val=0x01  # change bank 1 [bank select]
+WRITE bank=0x01 reg=0x10 mask=0xFF val=0x00  # 
+WRITE bank=0x01 reg=0x11 mask=0xFF val=0x00  # 
+WRITE bank=0x01 reg=0x12 mask=0xFF val=0x00  # 
+WRITE bank=0x01 reg=0x13 mask=0xFF val=0x00  # for receiver, BKSV should be zero on inital
+WRITE bank=0x01 reg=0x28 mask=0xFF val=0x00  # Clear KSV LIST
+WRITE bank=0x01 reg=0x29 mask=0xFF val=0x00  # Clear KSV LIST
+WRITE bank=0x01 reg=0x2A mask=0xFF val=0x00  # Clear KSV LIST
+WRITE bank=0x01 reg=0x2B mask=0xFF val=0x00  # Clear KSV LIST
+WRITE bank=0x01 reg=0x2C mask=0xFF val=0x00  # Clear KSV LIST
+WRITE bank=0x01 reg=0xC0 mask=0xC0 val=0x40  # 
+WRITE bank=0x03 reg=0x0F mask=0x07 val=0x03  # change bank 3 [bank select]
+WRITE bank=0x03 reg=0xE3 mask=0xFF val=0x07  # 0426 modify by RD code edit it from 06 to 05, recommand by emily, and 11/24 modify for B1 and later
+WRITE bank=0x03 reg=0x27 mask=0xFF val=0x9F  # 
+WRITE bank=0x03 reg=0x28 mask=0xFF val=0x9F  # 
+WRITE bank=0x03 reg=0x29 mask=0xFF val=0x9F  # 
+WRITE bank=0x03 reg=0xA7 mask=0x40 val=0x40  # 
+WRITE bank=0x07 reg=0x0F mask=0x07 val=0x07  # change bank 7 [bank select]
+WRITE bank=0x07 reg=0xE3 mask=0xFF val=0x07  # 0426 modify by RD code edit it from 06 to 05, recommand by emily
+WRITE bank=0x07 reg=0x27 mask=0xFF val=0x9F  # 
+WRITE bank=0x07 reg=0x28 mask=0xFF val=0x9F  # 
+WRITE bank=0x07 reg=0x29 mask=0xFF val=0x9F  # 
+WRITE bank=0x07 reg=0xA7 mask=0x40 val=0x40  # 
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # change bank 0 [bank select]
+WRITE bank=0x00 reg=0x21 mask=0x04 val=0x00  # disable CEC clock gating
+WRITE bank=0x00 reg=0x4A mask=0xFF val=0xC8  # CEC ADDR
+WRITE bank=0x00 reg=0xF8 mask=0xFF val=0xC3  # 
+WRITE bank=0x00 reg=0xF8 mask=0xFF val=0xA5  # 
+WRITE bank=0x01 reg=0x0F mask=0x07 val=0x01  # [bank select]
+WRITE bank=0x01 reg=0x5F mask=0xFF val=0x04  # 
+WRITE bank=0x01 reg=0x58 mask=0xFF val=0x12  # 
+WRITE bank=0x01 reg=0x58 mask=0xFF val=0x02  # 
+WRITE bank=0x01 reg=0x5F mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # [bank select]
+WRITE bank=0x00 reg=0xF8 mask=0xFF val=0xFF  # 
+WRITE bank=0x03 reg=0x0F mask=0x07 val=0x03  # add 20200721 by mail 'RE: HDMIRX 6G' [bank select]
+WRITE bank=0x03 reg=0xA6 mask=0x08 val=0x08  # 
+WRITE bank=0x07 reg=0x0F mask=0x07 val=0x07  # [bank select]
+WRITE bank=0x07 reg=0xA6 mask=0x08 val=0x08  # 
+WRITE bank=0x05 reg=0x0F mask=0x07 val=0x05  # change bank 5 [bank select]
+WRITE bank=0x05 reg=0x20 mask=0x03 val=0x01  # 
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # change bank 5 [bank select]
+WRITE bank=0x04 reg=0x0F mask=0x07 val=0x04  # change bank [bank select]
+WRITE bank=0x04 reg=0x3C mask=0x20 val=0x00  # 
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # change bank [bank select]
+WRITE bank=0x00 reg=0x91 mask=0x40 val=0x40  # 
+WRITE bank=0x03 reg=0x0F mask=0x07 val=0x03  # change bank [bank select]
+WRITE bank=0x03 reg=0xF0 mask=0xFF val=0xC0  # 
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # change bank [bank select]
+WRITE bank=0x00 reg=0x21 mask=0x40 val=0x40  # 
+WRITE bank=0x00 reg=0xCE mask=0x30 val=0x00  # 
+WRITE bank=0x04 reg=0x0F mask=0x07 val=0x04  # [bank select]
+WRITE bank=0x04 reg=0xCE mask=0x30 val=0x00  # 
+WRITE bank=0x04 reg=0x42 mask=0xE0 val=0xC0  # add 20180313 by emily mail, 20190313 ADD Reg42[5] = 0 for 8K1K resolution
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # [bank select]
+WRITE bank=0x00 reg=0x42 mask=0xE0 val=0xC0  # add 20180313 by emily mail
+WRITE bank=0x00 reg=0x7B mask=0x10 val=0x10  # for detect DRM PKT
+WRITE bank=0x00 reg=0x3C mask=0x21 val=0x00  # 
+WRITE bank=0x00 reg=0x3B mask=0xFF val=0x23  # IT6805B0 SW Change
+WRITE bank=0x00 reg=0xF6 mask=0xFF val=0x08  # IT6805B0 SW Change
+WRITE bank=0x04 reg=0x0F mask=0x07 val=0x04  # [bank select]
+WRITE bank=0x04 reg=0x3C mask=0x21 val=0x00  # 
+WRITE bank=0x04 reg=0x3B mask=0xFF val=0x23  # IT6805B0 SW Change
+WRITE bank=0x00 reg=0x0F mask=0x07 val=0x00  # [bank select]
+WRITE bank=0x00 reg=0x59 mask=0xFF val=0x00  # 
+WRITE bank=0x00 reg=0x2C mask=0x01 val=0x01  # 20200924 add by hardware auto set HDCP Bstatus
+WRITE bank=0x00 reg=0x2D mask=0x10 val=0x10  # 20200924 add by hardware auto set HDCP Bstatus
+# ---- SECTION B: iTE6805_Init_CAOF() (AFE/PLL power-up; polls simplified) ----
+WRITE bank=0x03 reg=0x3A mask=0x80 val=0x00  # CAOF: Reg_CAOFTrg low (P0)
+WRITE bank=0x03 reg=0xA0 mask=0x80 val=0x80  # CAOF
+WRITE bank=0x03 reg=0xA1 mask=0x80 val=0x80  # CAOF
+WRITE bank=0x03 reg=0xA2 mask=0x80 val=0x80  # CAOF
+WRITE bank=0x03 reg=0xA4 mask=0x08 val=0x08  # CAOF IT6805Bx change
+WRITE bank=0x03 reg=0x3B mask=0xC0 val=0x00  # CAOF: Reg_ENSOF=0 Reg_ENCAOF=0
+WRITE bank=0x03 reg=0xA7 mask=0x10 val=0x10  # CAOF: Reg_PHSELEN high
+WRITE bank=0x03 reg=0x48 mask=0x80 val=0x80  # CAOF: read back sof value
+WRITE bank=0x00 reg=0x29 mask=0x01 val=0x01  # CAOF: disable MHL AutoPWD
+WRITE bank=0x00 reg=0x2A mask=0x41 val=0x41  # CAOF: inverse COF CLK P0, CAOFRST
+DELAY    10 ms            # CAOF: delay1ms(10)
+WRITE bank=0x00 reg=0x2A mask=0x40 val=0x00  # CAOF: release CAOFRST P0
+WRITE bank=0x00 reg=0x24 mask=0x04 val=0x04  # CAOF: IPLL RST P0
+WRITEF bank=0x00 reg=0x25 mask=0x00 val=0x00  # CAOF: disable AFE PWD P0
+WRITEF bank=0x00 reg=0x26 mask=0x00 val=0x00  # CAOF
+WRITEF bank=0x00 reg=0x27 mask=0x00 val=0x00  # CAOF
+WRITEF bank=0x00 reg=0x28 mask=0x00 val=0x00  # CAOF
+WRITE bank=0x00 reg=0x3C mask=0x10 val=0x00  # CAOF: disable PLLBufRst P0
+WRITE bank=0x07 reg=0x3A mask=0x80 val=0x00  # CAOF (P1)
+WRITE bank=0x07 reg=0xA0 mask=0x80 val=0x80  # CAOF (P1)
+WRITE bank=0x07 reg=0xA1 mask=0x80 val=0x80  # CAOF (P1)
+WRITE bank=0x07 reg=0xA2 mask=0x80 val=0x80  # CAOF (P1)
+WRITE bank=0x07 reg=0xA4 mask=0x08 val=0x08  # CAOF (P1)
+WRITE bank=0x07 reg=0x3B mask=0xC0 val=0x00  # CAOF (P1)
+WRITE bank=0x07 reg=0xA7 mask=0x10 val=0x10  # CAOF (P1)
+WRITE bank=0x07 reg=0x48 mask=0x80 val=0x80  # CAOF (P1)
+WRITE bank=0x00 reg=0x32 mask=0x41 val=0x41  # CAOF: CAOF RST P1, inverse CAOF CLK
+DELAY    10 ms            # CAOF: delay1ms(10)
+WRITE bank=0x00 reg=0x32 mask=0x40 val=0x00  # CAOF: release P1
+WRITE bank=0x00 reg=0x2C mask=0x04 val=0x04  # CAOF: IPLL RST P1
+WRITE bank=0x00 reg=0x2D mask=0x6F val=0x00  # CAOF: disable AFE PWD P1
+WRITEF bank=0x00 reg=0x2E mask=0x00 val=0x00  # CAOF
+WRITEF bank=0x00 reg=0x2F mask=0x00 val=0x00  # CAOF
+WRITEF bank=0x00 reg=0x30 mask=0x00 val=0x00  # CAOF
+WRITE bank=0x04 reg=0x3C mask=0x10 val=0x00  # CAOF: disable PLLBufRst P1
+WRITE bank=0x03 reg=0x3A mask=0x80 val=0x80  # CAOF: Reg_CAOFTrg high (P0)
+POLL  bank=0x00 reg=0x08 mask=0x10 exp=0x10  # CAOF: wait PORT0 CAOF done (reg08[4])
+WRITE bank=0x07 reg=0x3A mask=0x80 val=0x80  # CAOF: Reg_CAOFTrg high (P1)
+POLL  bank=0x00 reg=0x0D mask=0x10 exp=0x10  # CAOF: wait PORT1 CAOF done (reg0D[4])
+# ---- SECTION B2: Init_fsm body between CAOF and EDID ----
+WRITEF bank=0x00 reg=0x28 mask=0x00 val=0x88  # Init_fsm: 0714 MHL CTS need set 0x28=0x88
+WRITE bank=0x01 reg=0xC5 mask=0x80 val=0x00  # Set_Video_Tristate(ON): full-bus-DDR 10b, release tri-state (bank1 0xC5=0x38 path)
+WRITEF bank=0x01 reg=0xC5 mask=0x00 val=0x38  # Set_Video_Tristate(ON): Reg_DlyVDIO=0x38 for single-channel/full-bus-DDR/10b
+# ---- SECTION B3: OCLK_Cal() static approximation ----
+WRITE bank=0x03 reg=0xAA mask=0x1F val=0x0C  # OCLK_Cal: adjust bank3 0xAA[4:0]=0x0C
+WRITE bank=0x00 reg=0x91 mask=0x3F val=0x14  # OCLK_Cal static: t1usint=20 (RCLK~20.5MHz nominal, dynamic measurement skipped)
+WRITEF bank=0x00 reg=0x92 mask=0x00 val=0x80  # OCLK_Cal static: t1usflt=0.5MHz*256/1000 (approx, affects audio/CEC timers only)
+WRITE bank=0x03 reg=0xFA mask=0xFF val=0xCD  # OCLK_Cal static: bank3 0xFA=RCLK/100~205 (ChipID B0 SCDC RR hold)
+# ---- SECTION D: iTE6805_Set_TTL_Video_Path() ----
+WRITE bank=0x01 reg=0xC0 mask=0x06 val=0x02  # TTL: Reg1C0[1]=1 full-bus DDR mode
+WRITE bank=0x01 reg=0xC1 mask=0x22 val=0x02  # TTL: Reg1C1[1]=1 DDR, [5]=0 separate sync
+# (bank0 0x6B[3:2] left untouched: eVidOutConfig=BYPASS_CSC, input RGB auto)
+# ---- SECTION E: iTE6805_Port_Select_Body(PORT0) - main port + power ----
+WRITE bank=0x00 reg=0x35 mask=0x01 val=0x00  # Port_Select: select PORT0
+WRITEF bank=0x00 reg=0x25 mask=0x00 val=0x00  # Port_Select P0 power: reg25=0
+WRITEF bank=0x00 reg=0x26 mask=0x00 val=0x00  # Port_Select P0 power
+WRITEF bank=0x00 reg=0x27 mask=0x00 val=0x00  # Port_Select P0 power
+WRITEF bank=0x00 reg=0x2A mask=0x00 val=0x01  # Port_Select P0 power
+WRITE bank=0x00 reg=0x2D mask=0x6F val=0x6F  # Port_Select P0 power: enable AFE
+WRITEF bank=0x00 reg=0x2E mask=0x00 val=0xFF  # Port_Select P0 power
+WRITEF bank=0x00 reg=0x2F mask=0x00 val=0xFF  # Port_Select P0 power
+WRITEF bank=0x00 reg=0x32 mask=0x00 val=0x3E  # Port_Select P0 power
+WRITE bank=0x03 reg=0xA8 mask=0x08 val=0x08  # Port_Select: bank3 0xA8[3]=1
+WRITE bank=0x07 reg=0xA8 mask=0x08 val=0x00  # Port_Select: bank7 0xA8[3]=0
+WRITE bank=0x00 reg=0xC5 mask=0x10 val=0x10  # Port_Select: EDID/SCDC reset pulse
+DELAY     1 ms            # Port_Select: delay1ms(1)
+WRITE bank=0x00 reg=0xC5 mask=0x10 val=0x00  # Port_Select: EDID/SCDC reset release
+# ---- SECTION F: iTE6805_Enable_Video_Output() DVI-mode fixup ----
+WRITE bank=0x00 reg=0x6B mask=0x30 val=0x10  # Enable_Video_Output: force input format RGB (DVI path)
+WRITE bank=0x00 reg=0x6B mask=0x01 val=0x01  # Enable_Video_Output: force input color mode as bit[3:2]
+WRITE bank=0x00 reg=0x6E mask=0xFF val=0xE0  # Enable_Video_Output: 12b low-bit cutoff fix, full range
+WRITE bank=0x01 reg=0x86 mask=0xFF val=0x00  # Enable_Video_Output: bank1 0x86=0
+END

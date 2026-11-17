@@ -1,0 +1,17 @@
+# Gowin EDA generated artifacts (project is created in-place per AGENTS.md §6)
+impl/
+project/
+*.fs
+*.bit
+*.pds
+*.uf
+*.lo
+*.ko
+*.lso
+*.html
+*.log
+*.jo
+*~
+
+__pycache__/
+*.pyc
