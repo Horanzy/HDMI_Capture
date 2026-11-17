@@ -1,0 +1,1232 @@
+{
+"\u7ba1\u811a\u540d\u79f0": {
+"ball": "UG324[1]",
+"bank": "BANK",
+"full": "\u7ba1\u811a\u540d\u79f0"
+},
+"IOB10A": {
+"ball": "U5",
+"bank": "5",
+"full": "IOB10A/D03/SSPI_CN"
+},
+"IOB10B": {
+"ball": "V5",
+"bank": "5",
+"full": "IOB10B/D04/SI/SSI0IOB12A/GCLKT_10B/D07/SSPI_W"
+},
+"PN": {
+"ball": "R5",
+"bank": "5",
+"full": "PN/SSI2/LPLL1_T_IN1IOB12B/GCLKC_10B/RDWR_B/LP"
+},
+"LL1_C_IN1": {
+"ball": "T5",
+"bank": "5",
+"full": "LL1_C_IN1"
+},
+"IOB14A": {
+"ball": "N6",
+"bank": "5",
+"full": "IOB14A/SSPI_CLK"
+},
+"IOB14B": {
+"ball": "P7",
+"bank": "5",
+"full": "IOB14B/CLKHOLD_N/SSI3"
+},
+"IOB16A": {
+"ball": "T6",
+"bank": "5",
+"full": "IOB16A"
+},
+"IOB16B": {
+"ball": "V6",
+"bank": "5",
+"full": "IOB16B"
+},
+"IOB18B": {
+"ball": "P8",
+"bank": "5",
+"full": "IOB18B"
+},
+"IOB1A": {
+"ball": "V2",
+"bank": "5",
+"full": "IOB1A/RECONFIGN"
+},
+"IOB20A": {
+"ball": "U7",
+"bank": "5",
+"full": "IOB20A"
+},
+"IOB20B": {
+"ball": "V7",
+"bank": "5",
+"full": "IOB20B"
+},
+"IOB22A": {
+"ball": "U8",
+"bank": "5",
+"full": "IOB22A"
+},
+"IOB22B": {
+"ball": "V8",
+"bank": "5",
+"full": "IOB22B"
+},
+"IOB24A": {
+"ball": "M8",
+"bank": "5",
+"full": "IOB24A"
+},
+"IOB24B": {
+"ball": "N8",
+"bank": "5",
+"full": "IOB24B"
+},
+"IOB26A": {
+"ball": "M10",
+"bank": "5",
+"full": "IOB26A/GCLKT_9B"
+},
+"IOB26B": {
+"ball": "N9",
+"bank": "5",
+"full": "IOB26B/GCLKC_9B"
+},
+"IOB29A": {
+"ball": "T9",
+"bank": "4",
+"full": "IOB29A/GCLKT_11A"
+},
+"IOB29B": {
+"ball": "V9",
+"bank": "4",
+"full": "IOB29B/GCLKC_11A"
+},
+"IOB2AIOB31A": {
+"ball": "T4",
+"bank": "5",
+"full": "IOB2AIOB31A/GCLKT_10A/D14/BPLL_T"
+},
+"_FB0IOB31B": {
+"ball": "R8",
+"bank": "4",
+"full": "_FB0IOB31B/GCLKC_10A/D15/BPLL_C"
+},
+"_FB0IOB33A": {
+"ball": "T8",
+"bank": "4",
+"full": "_FB0IOB33A/GCLKT_9A/D13/BPLL_T_I"
+},
+"N1IOB33B": {
+"ball": "U10",
+"bank": "4",
+"full": "N1IOB33B/GCLKC_9A/EMCCLK/BPL"
+},
+"L_C_IN1": {
+"ball": "V10",
+"bank": "4",
+"full": "L_C_IN1"
+},
+"\u00a9 2024 GOWINSEMIGW5A\u7cfb\u5217FPGA\u4ea7\u54c1GW5A-25\u5668\u4ef6PinoutPin List UG324\u6ce8\uff01[1]LV\u7248\u672c\u5c01\u88c5\u3002": {
+"ball": "41(211)",
+"bank": "",
+"full": "\u00a9 2024 GOWINSEMIGW5A\u7cfb\u5217FPGA\u4ea7\u54c1GW5A-25\u5668\u4ef6PinoutPin List UG324\u6ce8\uff01[1]LV\u7248\u672c\u5c01\u88c5\u3002"
+},
+"IOB35A": {
+"ball": "R10",
+"bank": "4",
+"full": "IOB35A/GCLKT_8"
+},
+"IOB35B": {
+"ball": "T10",
+"bank": "4",
+"full": "IOB35B/GCLKC_8"
+},
+"IOB37A": {
+"ball": "U3",
+"bank": "4",
+"full": "IOB37A/READY"
+},
+"IOB37B": {
+"ball": "V3",
+"bank": "4",
+"full": "IOB37B/MCS_N/CSO_B"
+},
+"IOB39A": {
+"ball": "U11",
+"bank": "4",
+"full": "IOB39A"
+},
+"IOB39B": {
+"ball": "V11",
+"bank": "4",
+"full": "IOB39B"
+},
+"IOB41A": {
+"ball": "N10",
+"bank": "4",
+"full": "IOB41A"
+},
+"IOB41B": {
+"ball": "P11",
+"bank": "4",
+"full": "IOB41B"
+},
+"IOB43A": {
+"ball": "T12",
+"bank": "4",
+"full": "IOB43A"
+},
+"IOB43B": {
+"ball": "V12",
+"bank": "4",
+"full": "IOB43B"
+},
+"IOB45A": {
+"ball": "R11",
+"bank": "4",
+"full": "IOB45A"
+},
+"IOB45B": {
+"ball": "T11",
+"bank": "4",
+"full": "IOB45B"
+},
+"IOB48A": {
+"ball": "M11",
+"bank": "4",
+"full": "IOB48A"
+},
+"IOB48B": {
+"ball": "N11",
+"bank": "4",
+"full": "IOB48B"
+},
+"IOB4A": {
+"ball": "N5",
+"bank": "5",
+"full": "IOB4A/D08/LPLL1_T_FB0"
+},
+"IOB4B": {
+"ball": "P6",
+"bank": "5",
+"full": "IOB4B/D09/LPLL1_C_FB0"
+},
+"IOB50A": {
+"ball": "U13",
+"bank": "4",
+"full": "IOB50A/D11"
+},
+"IOB50B": {
+"ball": "V13",
+"bank": "4",
+"full": "IOB50B/D12"
+},
+"IOB52A": {
+"ball": "N12",
+"bank": "4",
+"full": "IOB52A/MODE1"
+},
+"IOB52B": {
+"ball": "P12",
+"bank": "4",
+"full": "IOB52B/D10IOB54A/GCLKT_11B/D01/MI2/BPL"
+},
+"L_T_FB1IOB54B": {
+"ball": "T14",
+"bank": "4",
+"full": "L_T_FB1IOB54B/GCLKC_11B/D02/MI3/BP"
+},
+"LL_C_FB1": {
+"ball": "V14",
+"bank": "4",
+"full": "LL_C_FB1"
+},
+"IOB56A": {
+"ball": "U15",
+"bank": "4",
+"full": "IOB56A"
+},
+"IOB56B": {
+"ball": "V15",
+"bank": "4",
+"full": "IOB56B"
+},
+"IOB58A": {
+"ball": "R13",
+"bank": "4",
+"full": "IOB58A/D00/MISO/MI1/DIN"
+},
+"IOB58B": {
+"ball": "T13",
+"bank": "4",
+"full": "IOB58B/MOSI/CSI_B/MI0"
+},
+"IOB60A": {
+"ball": "U16",
+"bank": "4",
+"full": "IOB60A"
+},
+"IOB60B": {
+"ball": "V16",
+"bank": "4",
+"full": "IOB60B"
+},
+"IOB62A": {
+"ball": "R15",
+"bank": "4",
+"full": "IOB62A/CCLK"
+},
+"IOB62B": {
+"ball": "T15",
+"bank": "4",
+"full": "IOB62B/MODE0"
+},
+"IOB64A": {
+"ball": "V17",
+"bank": "4",
+"full": "IOB64A/DONE"
+},
+"IOB65A": {
+"ball": "P15",
+"bank": "3",
+"full": "IOB65A"
+},
+"IOB65B": {
+"ball": "P16",
+"bank": "3",
+"full": "IOB65B/DOUT"
+},
+"IOB67A": {
+"ball": "L14",
+"bank": "3",
+"full": "IOB67A"
+},
+"IOB67B": {
+"ball": "M13",
+"bank": "3",
+"full": "IOB67B"
+},
+"IOB69A": {
+"ball": "M14",
+"bank": "3",
+"full": "IOB69A"
+},
+"IOB69B": {
+"ball": "N14",
+"bank": "3",
+"full": "IOB69B"
+},
+"IOB6A": {
+"ball": "R7",
+"bank": "5",
+"full": "IOB6A"
+},
+"IOB6B": {
+"ball": "T7",
+"bank": "5",
+"full": "IOB6B"
+},
+"IOB71A": {
+"ball": "U17",
+"bank": "3",
+"full": "IOB71A"
+},
+"IOB71B": {
+"ball": "U18",
+"bank": "3",
+"full": "IOB71B"
+},
+"IOB73A": {
+"ball": "T17",
+"bank": "3",
+"full": "IOB73A"
+},
+"IOB73B": {
+"ball": "T18",
+"bank": "3",
+"full": "IOB73B"
+},
+"IOB75A": {
+"ball": "N15",
+"bank": "3",
+"full": "IOB75A/GCLKT_6B"
+},
+"IOB75B": {
+"ball": "N16",
+"bank": "3",
+"full": "IOB75B/GCLKC_6B"
+},
+"IOB77A": {
+"ball": "P17",
+"bank": "3",
+"full": "IOB77A"
+},
+"IOB77B": {
+"ball": "P18",
+"bank": "3",
+"full": "IOB77B"
+},
+"IOB79A": {
+"ball": "N17",
+"bank": "3",
+"full": "IOB79A"
+},
+"IOB79B": {
+"ball": "N18",
+"bank": "3",
+"full": "IOB79B"
+},
+"IOB81A": {
+"ball": "M16",
+"bank": "3",
+"full": "IOB81A"
+},
+"IOB81B": {
+"ball": "M18",
+"bank": "3",
+"full": "IOB81B"
+},
+"IOB83A": {
+"ball": "L17",
+"bank": "3",
+"full": "IOB83A"
+},
+"IOB83B": {
+"ball": "L18",
+"bank": "3",
+"full": "IOB83B"
+},
+"IOB85A": {
+"ball": "K17",
+"bank": "3",
+"full": "IOB85A"
+},
+"IOB85B": {
+"ball": "K18",
+"bank": "3",
+"full": "IOB85B"
+},
+"IOB87A": {
+"ball": "J16",
+"bank": "3",
+"full": "IOB87A"
+},
+"IOB89A": {
+"ball": "H17",
+"bank": "3",
+"full": "IOB89A/GCLKT_7/BPLL_T_IN0"
+},
+"IOB89B": {
+"ball": "H18",
+"bank": "3",
+"full": "IOB89B/GCLKC_7/BPLL_C_IN0"
+},
+"IOB8A": {
+"ball": "R3",
+"bank": "5",
+"full": "IOB8A/D05/SO/SSI1"
+},
+"IOB8B": {
+"ball": "T3",
+"bank": "5",
+"full": "IOB8B/D06"
+},
+"IOB91A": {
+"ball": "L15",
+"bank": "3",
+"full": "IOB91A/GCLKT_6A"
+},
+"IOB91B": {
+"ball": "L16",
+"bank": "3",
+"full": "IOB91B/GCLKC_6A"
+},
+"IOL12A": {
+"ball": "K2",
+"bank": "6",
+"full": "IOL12A"
+},
+"IOL12B": {
+"ball": "K1",
+"bank": "6",
+"full": "IOL12B"
+},
+"IOL14A": {
+"ball": "L2",
+"bank": "6",
+"full": "IOL14A/LPLL1_T_IN0"
+},
+"IOL14B": {
+"ball": "L1",
+"bank": "6",
+"full": "IOL14B/LPLL1_C_IN0"
+},
+"IOL16A": {
+"ball": "M3",
+"bank": "6",
+"full": "IOL16A"
+},
+"IOL16B": {
+"ball": "M1",
+"bank": "6",
+"full": "IOL16B"
+},
+"IOL18A": {
+"ball": "N2",
+"bank": "6",
+"full": "IOL18A"
+},
+"IOL18B": {
+"ball": "N1",
+"bank": "6",
+"full": "IOL18B"
+},
+"IOL21A": {
+"ball": "P2",
+"bank": "6",
+"full": "IOL21A"
+},
+"IOL21BIOL3A": {
+"ball": "P1",
+"bank": "6",
+"full": "IOL21BIOL3A/GCLKT_14/LPLL0_T_IN2/L"
+},
+"PLL0_T_FB0IOL3B": {
+"ball": "H2",
+"bank": "6",
+"full": "PLL0_T_FB0IOL3B/GCLKC_14/LPLL0_C_IN2/L"
+},
+"PLL0_C_FB0IOL5A": {
+"ball": "H1",
+"bank": "6",
+"full": "PLL0_C_FB0IOL5A/GCLKT_13/LPLL0_T_IN1/L"
+},
+"PLL0_T_FB1IOL5B": {
+"ball": "K4",
+"bank": "6",
+"full": "PLL0_T_FB1IOL5B/GCLKC_13/LPLL0_C_IN1/L"
+},
+"PLL0_C_FB1": {
+"ball": "K3",
+"bank": "6",
+"full": "PLL0_C_FB1"
+},
+"IOL7B": {
+"ball": "J1",
+"bank": "6",
+"full": "IOL7B"
+},
+"IOL9A": {
+"ball": "L4",
+"bank": "6",
+"full": "IOL9A"
+},
+"IOL9B": {
+"ball": "L3",
+"bank": "6",
+"full": "IOL9B"
+},
+"IOR12A": {
+"ball": "D17",
+"bank": "2",
+"full": "IOR12A"
+},
+"IOR12B": {
+"ball": "D18",
+"bank": "2",
+"full": "IOR12B"
+},
+"IOR14A": {
+"ball": "F15",
+"bank": "2",
+"full": "IOR14A"
+},
+"IOR14B": {
+"ball": "F16",
+"bank": "2",
+"full": "IOR14B"
+},
+"IOR16A": {
+"ball": "E16",
+"bank": "2",
+"full": "IOR16A"
+},
+"IOR16B": {
+"ball": "E18",
+"bank": "2",
+"full": "IOR16B"
+},
+"IOR18A": {
+"ball": "H13",
+"bank": "2",
+"full": "IOR18A"
+},
+"IOR18B": {
+"ball": "H14",
+"bank": "2",
+"full": "IOR18B"
+},
+"IOR1A": {
+"ball": "A17",
+"bank": "10",
+"full": "IOR1A/TCK"
+},
+"IOR1B": {
+"ball": "D15",
+"bank": "10",
+"full": "IOR1B/TDI"
+},
+"IOR20A": {
+"ball": "F17",
+"bank": "2",
+"full": "IOR20A"
+},
+"IOR20B": {
+"ball": "F18",
+"bank": "2",
+"full": "IOR20B"
+},
+"IOR22A": {
+"ball": "G16",
+"bank": "2",
+"full": "IOR22A"
+},
+"IOR22B": {
+"ball": "G18",
+"bank": "2",
+"full": "IOR22B"
+},
+"IOR24A": {
+"ball": "H15",
+"bank": "2",
+"full": "IOR24A"
+},
+"IOR26A": {
+"ball": "J13",
+"bank": "2",
+"full": "IOR26A"
+},
+"IOR26B": {
+"ball": "K14",
+"bank": "2",
+"full": "IOR26B"
+},
+"IOR29A": {
+"ball": "K12",
+"bank": "2",
+"full": "IOR29A"
+},
+"IOR29BIOR31A": {
+"ball": "K13",
+"bank": "2",
+"full": "IOR29BIOR31A/GCLKT_4/RPLL1_T_IN0/"
+},
+"RPLL1_T_FB1IOR31B": {
+"ball": "L12",
+"bank": "2",
+"full": "RPLL1_T_FB1IOR31B/GCLKC_4/RPLL1_C_IN0/"
+},
+"RPLL1_C_FB1IOR33A": {
+"ball": "L13",
+"bank": "2",
+"full": "RPLL1_C_FB1IOR33A/GCLKT_5/RPLL1_T_IN1/"
+},
+"RPLL1_T_FB0IOR33B": {
+"ball": "K15",
+"bank": "2",
+"full": "RPLL1_T_FB0IOR33B/GCLKC_5/RPLL1_C_IN1/"
+},
+"RPLL1_C_FB0": {
+"ball": "K16",
+"bank": "2",
+"full": "RPLL1_C_FB0"
+},
+"IOR35A": {
+"ball": "R16",
+"bank": "11",
+"full": "IOR35A"
+},
+"IOR3A": {
+"ball": "B18",
+"bank": "10",
+"full": "IOR3A/TMS"
+},
+"IOR3B": {
+"ball": "D16",
+"bank": "10",
+"full": "IOR3B/TDO"
+},
+"IOR5A": {
+"ball": "H12",
+"bank": "2",
+"full": "IOR5A"
+},
+"IOR5B": {
+"ball": "G13",
+"bank": "2",
+"full": "IOR5B"
+},
+"IOR7A": {
+"ball": "F14",
+"bank": "2",
+"full": "IOR7A"
+},
+"IOR7B": {
+"ball": "G14",
+"bank": "2",
+"full": "IOR7B"
+},
+"IOR9A": {
+"ball": "C17",
+"bank": "2",
+"full": "IOR9A"
+},
+"IOR9B": {
+"ball": "C18",
+"bank": "2",
+"full": "IOR9B"
+},
+"IOT11A": {
+"ball": "F2",
+"bank": "7",
+"full": "IOT11A"
+},
+"IOT11B": {
+"ball": "F1",
+"bank": "7",
+"full": "IOT11B"
+},
+"IOT13A": {
+"ball": "J7",
+"bank": "7",
+"full": "IOT13A"
+},
+"IOT13B": {
+"ball": "J6",
+"bank": "7",
+"full": "IOT13B"
+},
+"IOT15A": {
+"ball": "E3",
+"bank": "7",
+"full": "IOT15A"
+},
+"IOT15B": {
+"ball": "E1",
+"bank": "7",
+"full": "IOT15B"
+},
+"IOT17A": {
+"ball": "F4",
+"bank": "7",
+"full": "IOT17A"
+},
+"IOT17B": {
+"ball": "F3",
+"bank": "7",
+"full": "IOT17B"
+},
+"IOT19A": {
+"ball": "D2",
+"bank": "7",
+"full": "IOT19A"
+},
+"IOT19B": {
+"ball": "D1",
+"bank": "7",
+"full": "IOT19B"
+},
+"IOT1A": {
+"ball": "H4",
+"bank": "7",
+"full": "IOT1A/GCLKT_15/LPLL0_T_IN0"
+},
+"IOT1B": {
+"ball": "H3",
+"bank": "7",
+"full": "IOT1B/GCLKC_15/LPLL0_C_IN0"
+},
+"IOT21A": {
+"ball": "L7",
+"bank": "7",
+"full": "IOT21A"
+},
+"IOT21B": {
+"ball": "K6",
+"bank": "7",
+"full": "IOT21B"
+},
+"IOT23A": {
+"ball": "E4",
+"bank": "7",
+"full": "IOT23A"
+},
+"IOT23B": {
+"ball": "D3",
+"bank": "7",
+"full": "IOT23B"
+},
+"IOT25A": {
+"ball": "F6",
+"bank": "7",
+"full": "IOT25A"
+},
+"IOT25B": {
+"ball": "F5",
+"bank": "7",
+"full": "IOT25B"
+},
+"IOT27A": {
+"ball": "C2",
+"bank": "7",
+"full": "IOT27A"
+},
+"IOT27B": {
+"ball": "C1",
+"bank": "7",
+"full": "IOT27B"
+},
+"IOT29A": {
+"ball": "D4",
+"bank": "0",
+"full": "IOT29A/PUDC_B"
+},
+"IOT29B": {
+"ball": "C4",
+"bank": "0",
+"full": "IOT29B"
+},
+"IOT31A": {
+"ball": "B2",
+"bank": "0",
+"full": "IOT31A"
+},
+"IOT31B": {
+"ball": "A2",
+"bank": "0",
+"full": "IOT31B"
+},
+"IOT33A": {
+"ball": "D6",
+"bank": "0",
+"full": "IOT33A"
+},
+"IOT33B": {
+"ball": "C6",
+"bank": "0",
+"full": "IOT33B"
+},
+"IOT35A": {
+"ball": "B3",
+"bank": "0",
+"full": "IOT35A"
+},
+"IOT35B": {
+"ball": "A3",
+"bank": "0",
+"full": "IOT35B"
+},
+"IOT37A": {
+"ball": "B4",
+"bank": "0",
+"full": "IOT37A"
+},
+"IOT37B": {
+"ball": "A4",
+"bank": "0",
+"full": "IOT37B"
+},
+"IOT39A": {
+"ball": "C5",
+"bank": "0",
+"full": "IOT39A"
+},
+"IOT39B": {
+"ball": "A5",
+"bank": "0",
+"full": "IOT39B"
+},
+"IOT3A": {
+"ball": "L5",
+"bank": "7",
+"full": "IOT3A/GCLKT_16"
+},
+"IOT3B": {
+"ball": "K5",
+"bank": "7",
+"full": "IOT3B/GCLKC_16"
+},
+"IOT41A": {
+"ball": "F7",
+"bank": "0",
+"full": "IOT41A"
+},
+"IOT41B": {
+"ball": "E6",
+"bank": "0",
+"full": "IOT41B"
+},
+"IOT43A": {
+"ball": "B6",
+"bank": "0",
+"full": "IOT43A"
+},
+"IOT43B": {
+"ball": "A6",
+"bank": "0",
+"full": "IOT43B"
+},
+"IOT45A": {
+"ball": "E7",
+"bank": "0",
+"full": "IOT45A"
+},
+"IOT45B": {
+"ball": "E8",
+"bank": "0",
+"full": "IOT45B"
+},
+"IOT48A": {
+"ball": "C7",
+"bank": "0",
+"full": "IOT48A"
+},
+"IOT48B": {
+"ball": "A7",
+"bank": "0",
+"full": "IOT48B"
+},
+"IOT50A": {
+"ball": "D8",
+"bank": "0",
+"full": "IOT50A"
+},
+"IOT50B": {
+"ball": "C8",
+"bank": "0",
+"full": "IOT50B"
+},
+"IOT52A": {
+"ball": "G8",
+"bank": "0",
+"full": "IOT52A"
+},
+"IOT52B": {
+"ball": "F8",
+"bank": "0",
+"full": "IOT52B"
+},
+"IOT54A": {
+"ball": "B8",
+"bank": "0",
+"full": "IOT54A"
+},
+"IOT54BIOT56A": {
+"ball": "A8",
+"bank": "0",
+"full": "IOT54BIOT56A/GCLKT_0/TPLL_T_IN1/TP"
+},
+"LL_T_FB1IOT56B": {
+"ball": "D9",
+"bank": "0",
+"full": "LL_T_FB1IOT56B/GCLKC_0/TPLL_C_IN1/T"
+},
+"PLL_C_FB1IOT58A": {
+"ball": "C9",
+"bank": "0",
+"full": "PLL_C_FB1IOT58A/GCLKT_1/TPLL_T_IN2/TP"
+},
+"LL_T_FB0IOT58B": {
+"ball": "B9",
+"bank": "0",
+"full": "LL_T_FB0IOT58B/GCLKC_1/TPLL_C_IN2/T"
+},
+"PLL_C_FB0": {
+"ball": "A9",
+"bank": "0",
+"full": "PLL_C_FB0"
+},
+"IOT5B": {
+"ball": "H5",
+"bank": "7",
+"full": "IOT5B"
+},
+"IOT61A": {
+"ball": "D11",
+"bank": "1",
+"full": "IOT61A/GCLKT_2/TPLL_T_IN0"
+},
+"IOT61B": {
+"ball": "C11",
+"bank": "1",
+"full": "IOT61B/GCLKC_2/TPLL_C_IN0"
+},
+"IOT63A": {
+"ball": "C10",
+"bank": "1",
+"full": "IOT63A/GCLKT_3/RPLL0_T_IN0"
+},
+"IOT63B": {
+"ball": "A10",
+"bank": "1",
+"full": "IOT63B/GCLKC_3/RPLL0_C_IN0"
+},
+"IOT66A": {
+"ball": "G9",
+"bank": "1",
+"full": "IOT66A"
+},
+"IOT66B": {
+"ball": "F9",
+"bank": "1",
+"full": "IOT66B"
+},
+"IOT68A": {
+"ball": "B11",
+"bank": "1",
+"full": "IOT68A"
+},
+"IOT68B": {
+"ball": "A11",
+"bank": "1",
+"full": "IOT68B"
+},
+"IOT70A": {
+"ball": "G11",
+"bank": "1",
+"full": "IOT70A"
+},
+"IOT70B": {
+"ball": "F10",
+"bank": "1",
+"full": "IOT70B"
+},
+"IOT72B": {
+"ball": "A12",
+"bank": "1",
+"full": "IOT72B"
+},
+"IOT74A": {
+"ball": "F11",
+"bank": "1",
+"full": "IOT74A"
+},
+"IOT74B": {
+"ball": "E11",
+"bank": "1",
+"full": "IOT74B"
+},
+"IOT76A": {
+"ball": "D12",
+"bank": "1",
+"full": "IOT76A"
+},
+"IOT76B": {
+"ball": "C12",
+"bank": "1",
+"full": "IOT76B"
+},
+"IOT78A": {
+"ball": "C13",
+"bank": "1",
+"full": "IOT78A"
+},
+"IOT78B": {
+"ball": "A13",
+"bank": "1",
+"full": "IOT78B"
+},
+"IOT7A": {
+"ball": "G3",
+"bank": "7",
+"full": "IOT7A"
+},
+"IOT7B": {
+"ball": "G1",
+"bank": "7",
+"full": "IOT7B"
+},
+"IOT80A": {
+"ball": "F12",
+"bank": "1",
+"full": "IOT80A"
+},
+"IOT80B": {
+"ball": "E12",
+"bank": "1",
+"full": "IOT80B"
+},
+"IOT83A": {
+"ball": "B14",
+"bank": "1",
+"full": "IOT83A"
+},
+"IOT83B": {
+"ball": "A14",
+"bank": "1",
+"full": "IOT83B"
+},
+"IOT85A": {
+"ball": "F13",
+"bank": "1",
+"full": "IOT85A"
+},
+"IOT85B": {
+"ball": "E13",
+"bank": "1",
+"full": "IOT85B"
+},
+"IOT87A": {
+"ball": "C15",
+"bank": "1",
+"full": "IOT87A"
+},
+"IOT87B": {
+"ball": "A15",
+"bank": "1",
+"full": "IOT87B"
+},
+"IOT89A": {
+"ball": "D14",
+"bank": "1",
+"full": "IOT89A/RPLL0_T_FB1"
+},
+"IOT89B": {
+"ball": "C14",
+"bank": "1",
+"full": "IOT89B/RPLL0_C_FB1IOT91A/RPLL0_T_IN1/RPLL0_T_F"
+},
+"B0IOT91B": {
+"ball": "B16",
+"bank": "1",
+"full": "B0IOT91B/RPLL0_C_IN1/RPLL0_C_"
+},
+"FB0": {
+"ball": "A16",
+"bank": "1",
+"full": "FB0"
+},
+"IOT9A": {
+"ball": "H7",
+"bank": "7",
+"full": "IOT9A"
+},
+"IOT9B": {
+"ball": "G6",
+"bank": "7",
+"full": "IOT9B"
+},
+"M0_CKN": {
+"ball": "M5",
+"bank": "MIPI",
+"full": "M0_CKN"
+},
+"M0_CKP": {
+"ball": "L6",
+"bank": "MIPI",
+"full": "M0_CKP"
+},
+"M0_D0N": {
+"ball": "T1",
+"bank": "MIPI",
+"full": "M0_D0N"
+},
+"M0_D0P": {
+"ball": "T2",
+"bank": "MIPI",
+"full": "M0_D0P"
+},
+"M0_D1N": {
+"ball": "U1",
+"bank": "MIPI",
+"full": "M0_D1N"
+},
+"M0_D1P": {
+"ball": "U2",
+"bank": "MIPI",
+"full": "M0_D1P"
+},
+"M0_D2N": {
+"ball": "N3",
+"bank": "MIPI",
+"full": "M0_D2N"
+},
+"M0_D2P": {
+"ball": "N4",
+"bank": "MIPI",
+"full": "M0_D2P"
+},
+"M0_D3N": {
+"ball": "P3",
+"bank": "MIPI",
+"full": "M0_D3N"
+},
+"M0_D3P": {
+"ball": "P4",
+"bank": "MIPI",
+"full": "M0_D3P"
+},
+"VDD12_MIPI": {
+"ball": "N7",
+"bank": "N/A",
+"full": "VDD12_MIPI"
+},
+"VDDA_MIPI": {
+"ball": "K11",
+"bank": "N/A",
+"full": "VDDA_MIPI/VDDD_MIPI/VCC"
+},
+"VDDX_MIPI": {
+"ball": "G10",
+"bank": "N/A",
+"full": "VDDX_MIPI/VCCIO10/VCCX"
+},
+"VCC_LDO": {
+"ball": "J10",
+"bank": "N/A",
+"full": "VCC_LDO"
+},
+"VCCIO0": {
+"ball": "D13",
+"bank": "N/A",
+"full": "VCCIO0/VCCIO1"
+},
+"VCCIO2": {
+"ball": "J14",
+"bank": "N/A",
+"full": "VCCIO2/VCCIO3"
+},
+"VCCIO4": {
+"ball": "R6",
+"bank": "N/A",
+"full": "VCCIO4/VCCIO5"
+},
+"VCCIO6": {
+"ball": "M4",
+"bank": "N/A",
+"full": "VCCIO6/VCCIO7"
+},
+"V_EFUSE": {
+"ball": "L11",
+"bank": "N/A",
+"full": "V_EFUSE"
+},
+"VSS": {
+"ball": "V18",
+"bank": "N/A",
+"full": "VSS"
+},
+"NC": {
+"ball": "P13",
+"bank": "N/A",
+"full": "NC"
+},
+"\u00a9 2024 GOWINSEMI": {
+"ball": "42(211)",
+"bank": "",
+"full": "\u00a9 2024 GOWINSEMI"
+}
+}

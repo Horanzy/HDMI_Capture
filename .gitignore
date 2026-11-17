@@ -15,3 +15,6 @@ project/
 
 __pycache__/
 *.pyc
+
+# 重型参考资料PDF不入git（磁盘保留，来源见 docs/refs/README.md）
+docs/refs/datasheets/*.pdf
