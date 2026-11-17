@@ -161,6 +161,13 @@ EDID 上载（自制 2560×1440@144 EDID，经 0xA8 从机写入 IT68051 EDID SR
 
 ## 7. 文件清单与模块职责
 
+**docs/refs/ = 开发参考资料**（逐文件说明见 docs/refs/README.md）：
+- `final_bank_table_full.csv` = **引脚总表**（底板网络↔IT68051脚↔pad↔球脚↔bank↔IO全名），分配引脚/写约束以它为准
+- `schlib_pins.csv` / `pad_ball.json` / `ug985_ug324.json` = 核心板200pad映射、球脚对照、UG324双功能标记
+- `ft601_pinout.csv` / `parts_spec.md` / `硬件审查报告.md` = FT601引脚表、元件实测规格、整板原理图审查结论
+- `datasheets/` = IT68051 DS与Programming Guide、FT601 DS、DS1103、UG304/306/714/985/987、HDMI2.0 HW Guidelines（PDF较大已gitignore，磁盘保留）
+- `evb_src/` = ITE官方EVB源码（初始化表来源；寄存器级问题先查它；其EDID表内容不可照抄）
+
 ```
 hdmi_capture/
 ├── AGENTS.md                       本文件（交接文档，接手先读）
