@@ -137,15 +137,52 @@ module it68051_capture_top #(
     DCE u_buf_usb (.CLKIN(FT601_CLK), .CE(1'b1), .CLKOUT(clk_usb));
 
     // DDR3 clocks are independent of FT601: T9 50 MHz oscillator -> PLL.
-    // GW5A requires the DDR PHY memory_clk to come from PLL clkout2.
+    // Official GW5A-25 DDR flow: the PHY owns pll_stop; the external
+    // pll_mDRP_intf is the sole driver of the PLL MD bus and gates clkout2.
     wire ddr_clk_50m, ddr_memory_clk, ddr_pll_lock;
     wire ddr_ui_clk, ddr_init_done, ddr_pll_stop, ddr_phy_rst;
+    wire [7:0] ddr_pll_mdrdo, ddr_pll_mdwdi;
+    wire [1:0] ddr_pll_mdopc;
+    wire ddr_pll_mdainc;
+
     Gowin_PLL_DDR3 u_ddr_pll (
         .clkin   (DDR3_CLK_50M),
+        .reset   (1'b0),
         .clkout0 (ddr_clk_50m),
         .clkout2 (ddr_memory_clk),
         .lock    (ddr_pll_lock),
-        .mdclk   (DDR3_CLK_50M)
+        .mdrdo   (ddr_pll_mdrdo),
+        .mdclk   (DDR3_CLK_50M),
+        .mdopc   (ddr_pll_mdopc),
+        .mdainc  (ddr_pll_mdainc),
+        .mdwdi   (ddr_pll_mdwdi)
+    );
+
+    reg ddr_pll_lock_meta = 1'b0, ddr_pll_lock_sync = 1'b0;
+    reg ddr_pll_stop_meta = 1'b1, ddr_pll_stop_sync = 1'b1;
+    reg ddr_pll_stop_d = 1'b1;
+    reg ddr_pll_mdrp_wr = 1'b0;
+    always @(posedge DDR3_CLK_50M) begin
+        ddr_pll_lock_meta <= ddr_pll_lock;
+        ddr_pll_lock_sync <= ddr_pll_lock_meta;
+        ddr_pll_stop_meta <= ddr_pll_stop;
+        ddr_pll_stop_sync <= ddr_pll_stop_meta;
+        ddr_pll_stop_d    <= ddr_pll_stop_sync;
+        if (!ddr_pll_lock_sync)
+            ddr_pll_mdrp_wr <= 1'b0;
+        else
+            ddr_pll_mdrp_wr <= ddr_pll_stop_sync ^ ddr_pll_stop_d;
+    end
+
+    pll_mDRP_intf u_ddr_pll_mdrp (
+        .clk        (DDR3_CLK_50M),
+        .rst_n      (1'b1),
+        .pll_lock   (ddr_pll_lock_sync),
+        .wr         (ddr_pll_mdrp_wr),
+        .mdrp_inc   (ddr_pll_mdainc),
+        .mdrp_op    (ddr_pll_mdopc),
+        .mdrp_wdata (ddr_pll_mdwdi),
+        .mdrp_rdata (ddr_pll_mdrdo)
     );
 
     // ===================================================== reset generators

@@ -45,25 +45,10 @@ set_property -dict {
 report_property $ddr
 generate_target $ddr
 
-create_ipc -name clock_plladv -module_name Gowin_PLL_DDR3 -language Verilog \
-    -file_name gowin_pll_ddr3 -dir $ip_root -force
-set pll [get_ips Gowin_PLL_DDR3]
-set_property -dict {
-    CONFIG.General_Mode true
-    CONFIG.Adcanced_Mode false
-    CONFIG.CLKIN_FREQ 50
-    CONFIG.LOCK_EN true
-    CONFIG.CLKOUT0_FREQ 50
-    CONFIG.CLKOUT1_EN false
-    CONFIG.CLKOUT1_FREQ 50
-    CONFIG.CLKOUT2_EN true
-    CONFIG.CLKOUT2_FREQ 400
-    CONFIG.PLL_INIT_CLK_FREQ 50
-} $pll
-report_property $pll
-generate_target $pll
-file copy -force [file join $ip_root ipgen src pll_init.v] \
-    [file join $ip_root gowin_pll_ddr3 pll_init.v]
+# The external-mDRP PLL wrapper and its source IPC are checked in from the
+# official chapter-38 GW5A-25 flow (50 MHz in, 50/400 MHz outputs).
+# Gowin 1.9.11.03 crashes in read_ipc for this legacy IPC, so this script only
+# regenerates the DDR PHY; do not silently replace the verified PLL wrapper.
 
 run close
 exit

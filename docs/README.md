@@ -119,6 +119,7 @@ GW5A-25 的 BSRAM 总量为 1008Kbit=126KiB，**片上 RAM 存不下 640×640 �
 本分支使用核心板 FORESEE F60C1A0002-M6AR（2Gbit、x16）DDR3，但不攒整帧。视频域和 USB 域各保留一只 1024×128bit=16KiB 异步 FIFO，中间 `ddr3_line_buffer.v` 以 128bit/16B 为单位访问整个 DDR3 环形地址空间：
 
 - T9 50MHz 有源晶振输入 PLL；`clkout0=50MHz` 给控制逻辑，`clkout2=400MHz` 给 DDR PHY，UI=`memory_clk/4=100MHz`；FT601 100MHz 不参与 DDR PLL；
+- 使用 GW5A-25 官方外引 MD 总线 PLL wrapper（无内部 `PLL_INIT`）和加密 `pll_mDRP_intf`；PHY `pll_stop` 经两级同步后在双边沿产生一拍 `wr`，由 mDRP 模块启停 `clkout2`，MD 总线只有这一个驱动者；
 - 1:4、x16、BL8，一条命令传输一个 128bit 字，DDR 地址每次 `+8`；
 - 写侧两项预取消除 POP 气泡，读侧允许多个 outstanding 并按读命令预留输出 FIFO 空间；命令通道每拍可发一笔，双向同时工作时读写交替，不再逐字等待读返回；
 - 读出低水位 64 字；输入 FIFO 为空时允许立即排尾；
@@ -179,21 +180,21 @@ python run_flow.py --name packed422_board_est --timeout 100 --stall 30
 `feat/ddr3-line-buffer` 当前 DDR3-800 流水候选：
 
 - DDR3 球位按用户提供的 ACG525 CSV 逐项核对 UG324 封装；单端 SSTL15_I、差分 SSTL15D_I，P&R 报告 bank0/1 为 1.5V；
-- `mdclk` 已接 T9 50MHz，`PLL_INIT(MULTI_FAC=16)` 不再被综合剪掉；UI 侧复位释放已由 `ddr_ui_rst_sync` 同步；
+- 官方 `pll_mDRP_intf` 和 50/400MHz 外引 MD wrapper 已接入；综合未出现 mDRP/PLL 初始化模块被 swept 的提示；UI 侧复位释放由 `ddr_ui_rst_sync` 同步；
 - 通用缓冲自校验仿真：4000 个 128bit 字全部一致，覆盖多 outstanding、随机 ready、输入气泡、USB 停传、throttle 和环形回卷；
 - 持续满速仿真：20000 字逐一比对通过，20069 次写 + 20005 次读，最高积压 67 字、未触发 throttle，覆盖多次环形回卷；这是理想 DDR ready/固定 6 拍读延迟模型，不是真实 DRAM 总线效率证明；
-- 37/56 BSRAM；0 setup、0 hold，报告各分段无负 slack；最差 setup `+0.015ns`、hold `+0.139ns`，UI Fmax 约 100.266MHz，余量很小；
-- false-path 仅用于指定的厂商 PHY 准静态初始化控制及单一 `ddr_rsti_reg_2` 全局异步复位源，没有屏蔽 DDR 数据路径或整个时钟域；
-- bitstream：7,196,152 bytes；SHA256：`1AF97B8F87B8CC0C7FA5923D531398BE3B7A7F5E99B3F7DD5798B0E9C977F0EE`；
-- 证据：`validation/ddr3_800_pipelined/`；bitstream：根目录 `test_ddr3_line_buffer.fs`。
+- 36/56 BSRAM；0 setup、0 hold 违例，报告各分段无负 slack；最差 setup `+0.019ns`、hold `+0.143ns`，UI Fmax 约 100.783MHz，余量很小；
+- false-path 仅用于指定的厂商 PHY 准静态初始化控制、单一 `ddr_rsti_reg_2` 全局异步复位源，以及 `pll_stop` 到第一级 50MHz 同步器的异步采样路径；没有屏蔽 DDR 数据路径或整个时钟域；
+- bitstream：7,034,872 bytes；SHA256：`8A65D450988C52861152692FD6B6D8BCBB44F3AFA8138079F6513ED26D35BB5A`；
+- 证据：`validation/ddr3_mdrp_release/`；bitstream：根目录 `test_ddr3_line_buffer.fs`。
 
-`ip/gen_ips.tcl` 可重新生成当前量产器件的 DDR3/PLL IP。IPUG281 要求 25K 的 `pll_stop` 经 `pll_mDRP_intf` 控制 PLL `clkout2`；当前该输出仍留开，**上板前仍需按官方参考连接完成并验证，不能把当前候选视为 DDR 初始化已通过**。
+`ip/gen_ips.tcl` 只重新生成 DDR3 PHY。PLL 使用随工程保存的官方第38章 GW5A-25 外引 MD wrapper 和对应 IPC，静态参数为 FCLKIN=50MHz、VCO=800MHz、`ODIV0=16`、`ODIV2=2`；当前 1.9.11.03 工具读取该旧版 IPC 时会异常退出，因此不让脚本自动覆盖这份已核对的 wrapper。`pll_stop/mDRP` 设计链已经闭合，但真实 PLL lock、DDR 初始化和校准仍必须上板验证。
 
 综合中的 A_B/B_B 未使用警告对应 YUV422 NC 通道；RX_HSYNC、SIWU_N、WAKEUP_N 未使用是当前功能取舍。`csc_matrix_rom` 的层级 swept 提示已用常数输出对照综合证明会改变网表，不代表矩阵功能被整体删除。上述结果仍不是上板验收。
 
 ## 8. 上板验收顺序
 
-1. 完成 `pll_stop/mDRP` 参考连接，确认 DDR PLL lock、`init_calib_complete`、读写校验和持续吞吐，再做采集联调。
+1. 先确认 DDR PLL lock、mDRP 对 `clkout2` 的启停和 `init_calib_complete`，再做 DDR 读写校验、持续吞吐和采集联调；若校准失败，优先用示波器/调试状态检查 `pll_stop` 双边沿和 MD 写事务。
 2. I2C ACK、EDID 写完后 HPD 才有效，源端能读到 EDID。
 3. 用灰阶、RGB、黄青品红和高饱和色条核对 Cb/Cr、Y、奇偶像素和行顺序。
 4. 覆盖 1080p、1200p、2K、4K 常见输入及分配器 2K120 工况，检查动态居中和热切换。

@@ -8,9 +8,9 @@ create_clock -name ddr50_clk -period 20.000 [get_ports {DDR3_CLK_50M}]
 create_clock -name ft601_clk -period 10.000 [get_ports {FT601_CLK}]
 create_generated_clock -name clk_usb -source [get_ports {FT601_CLK}] -master_clock ft601_clk -divide_by 1 [get_pins {u_buf_usb/CLKOUT}]
 # T9 50 MHz -> PLL clkout0 50 MHz (control) and clkout2 400 MHz (DDR PHY).
-create_generated_clock -name ddr_pll_clk50 -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -divide_by 1 [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT0}]
-create_generated_clock -name ddr_memory_clk -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -multiply_by 8 [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT2}]
-create_generated_clock -name ddr_ui_clk -source [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT2}] -master_clock ddr_memory_clk -divide_by 4 [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]
+create_generated_clock -name ddr_pll_clk50 -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -divide_by 1 [get_pins {u_ddr_pll/PLLA_inst/CLKOUT0}]
+create_generated_clock -name ddr_memory_clk -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -multiply_by 8 [get_pins {u_ddr_pll/PLLA_inst/CLKOUT2}]
+create_generated_clock -name ddr_ui_clk -source [get_pins {u_ddr_pll/PLLA_inst/CLKOUT2}] -master_clock ddr_memory_clk -divide_by 4 [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]
 
 set_false_path -from [get_clocks {clk_vid}] -to [get_clocks {clk_usb}]
 set_false_path -from [get_clocks {clk_usb}] -to [get_clocks {clk_vid}]
@@ -19,6 +19,9 @@ set_false_path -from [get_clocks {clk_vid}] -to [get_clocks {ddr_ui_clk}]
 set_false_path -from [get_clocks {ddr_ui_clk}] -to [get_clocks {clk_vid}]
 set_false_path -from [get_clocks {clk_usb}] -to [get_clocks {ddr_ui_clk}]
 set_false_path -from [get_clocks {ddr_ui_clk}] -to [get_clocks {clk_usb}]
+# pll_stop is asynchronous to the T9 control clock.  Exclude only the first
+# synchronizer sampling path; the synchronized stop and mDRP logic stay timed.
+set_false_path -from [get_cells {u_ddr3/gw3_top/u_ddr_phy_top/stop_reg_2_s0}] -to [get_cells {ddr_pll_stop_meta_s1}]
 
 # Vendor PHY initialization controls are quasi-static and are held stable for
 # many cycles before use.  Exclude the named init controls and the single
