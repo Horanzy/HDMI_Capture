@@ -18,6 +18,7 @@ project/
 
 __pycache__/
 *.pyc
+.DS_Store
 ip/ipgen/
 ip/ddr3_memory_interface/temp/
 tb/*.vvp

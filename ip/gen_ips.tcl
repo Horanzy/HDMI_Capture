@@ -1,4 +1,6 @@
-# Regenerate DDR3 + PLL for the exact production FPGA, not the tutorial ES part.
+# Regenerate the DDR3 PHY for the exact production FPGA (not the tutorial ES part).
+# The verified external-mDRP PLL wrapper is checked in separately and is not
+# regenerated here; see the guard comment at the end of this script.
 set ip_root [file dirname [file normalize [info script]]]
 create_project -name ipgen -dir $ip_root -pn GW5A-LV25UG324C2/I1 -device_version A -force
 
