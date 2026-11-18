@@ -1,5 +1,6 @@
 # Gowin EDA generated artifacts (project is created in-place per AGENTS.md §6)
 impl/
+runs/
 project/
 *.fs
 *.bit
@@ -11,6 +12,8 @@ project/
 *.html
 *.log
 *.jo
+.user
+*.gprj.user
 *~
 
 __pycache__/

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5A-25A" pn="GW5A-LV25UG324C2/I1">gw5a25a-008</Device>
+    <FileList>
+        <File path="rtl/async_fifo_dc.v" type="file.verilog" enable="1"/>
+        <File path="rtl/csc_matrix_rom.v" type="file.verilog" enable="1"/>
+        <File path="rtl/edid_init.v" type="file.verilog" enable="1"/>
+        <File path="rtl/ft601_cmd_rx.v" type="file.verilog" enable="1"/>
+        <File path="rtl/ft601_master.v" type="file.verilog" enable="1"/>
+        <File path="rtl/i2c_master_od.v" type="file.verilog" enable="1"/>
+        <File path="rtl/iddr_bus_in.v" type="file.verilog" enable="1"/>
+        <File path="rtl/init_ctrl.v" type="file.verilog" enable="1"/>
+        <File path="rtl/it68051_capture_top.v" type="file.verilog" enable="1"/>
+        <File path="rtl/it68051_init_rom.v" type="file.verilog" enable="1"/>
+        <File path="rtl/video_stream.v" type="file.verilog" enable="1"/>
+        <File path="constr/capture.cst" type="file.cst" enable="1"/>
+        <File path="constr/timing.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>

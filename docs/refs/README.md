@@ -26,6 +26,6 @@
 | `HDMI2.0_HW_Guidelines_V12.pdf` | ITE官方：TMDS布线、ESD选型(ESD3V3U4ULC)、DDC低容要求 |
 
 ## EVB源码（docs/refs/evb_src/）
-ITE官方EVB固件源码（init/it68051_init_table.txt 的191条初始化表来源）。
+ITE官方EVB固件源码，是 `rtl/it68051_init_rom.v` 初始化序列和寄存器处理的原始依据。
 寄存器级问题先查这里：CSC/422输出、SCDC、EDID SRAM机制(0xA8/0xA9+bank0 0x4B)的实现参考。
 注意：EVB的EDID表内容**不可照抄**（Max TMDS 300MHz，不支持2K144），机制可学、内容自造。

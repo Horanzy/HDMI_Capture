@@ -7,44 +7,25 @@
 //   registers are clocked by clk_vid (buffered RX_PCLK, same edge the IT68051
 //   uses for data).
 //
-//   DDR CAPTURE STYLE -- RTL INFERENCE, NOT THE IDDR PRIMITIVE (read this
-//   before "fixing" it back):
-//     word_r (posedge) and word_f (negedge) are plain RTL register pairs on
-//     pad-direct inputs; with (* syn_useioff = 1 *) / "Use IO Register" the
-//     Gowin synthesizer places them in the IOLOGIC as DDR input registers
-//     (the same hardware the IDDR primitive wraps).
-//     HISTORY: an earlier version instantiated the bare IDDR primitive
-//     directly (IDDR u_iddr (.Q0,.Q1,.D,.CLK)).  On the Education edition
-//     V1.9.11 this primitive is SILENTLY DROPPED during synthesis: no error,
-//     no warning beyond the collateral CV0016 flood ("Input A_B2 is unused"
-//     x60), because word_r/word_f lose their drivers and the whole video
-//     path is pruned backwards from the undriven nets.  Do NOT go back to
-//     the bare primitive.  If the inferred form does not land in IOLOGIC
-//     (see "post-synthesis check" below) or the 148.5 MHz input timing
-//     fails, the sanctioned alternative is the IP Core Generator IDDR IP,
-//     not the bare primitive.
+//   DDR CAPTURE STYLE -- IOLOGIC IDDR PRIMITIVE.
+//     UG304 4.2.1 documents direct IDDR instantiation and shows that Q0/Q1
+//     are aligned at a common rising edge with two cycles of output latency.
+//     The official DDR IP template in this Gowin installation instantiates
+//     the same primitive.  The local one-bit iddr_probe project confirms that
+//     Education V1.9.11.03 + GW5A-25A preserves and routes it as IOLOGIC.
+//     Do not replace this with independent fabric posedge/negedge flops:
+//     those were not packed into IOLOGIC and failed source-synchronous TA.
 //
-//   Post-synthesis check: in the synthesis report the "I/O Register" usage
-//   must jump (about +60 registers placed as IOLOGIC/IOB DDR input flops;
-//   before the fix the project showed 43 "I/O Register as FF" and no IOLOGIC
-//   input registers).  If word_r/word_f end up as ordinary fabric flops the
-//   148.5 MHz source-synchronous capture margins will likely fail TA --
-//   switch to the IDDR IP then.
+//   Post-synthesis/P&R check: resource usage must report 60 IDDR instances.
+//   If it does not, stop and investigate rather than accepting a fabric-only
+//   bitstream.  The 60 direct pad inputs must remain free of fabric logic.
 //
 // Port / timing assumptions
-//   - qd_in[i] comes directly from an input pad (IBUF) - required for
-//     IOLOGIC placement; do not insert fabric logic between pad and capture.
-//   - clk_vid is the RX_PCLK ball buffered through DCE (PLL-free v1 flow).
-//   - IT68051 dual-pixel DDR: each PCLK rising edge presents one 2-pixel word,
-//     each falling edge the next 2-pixel word.  Datasheet setup/hold at the
-//     rising edge: TPSRd=1.22ns / TPSFd=1.0ns, at the falling edge
-//     TPHRd=1.42ns / TPHFd=0.84ns  -> margins are ~1ns, no phase shift used.
-//   - word_r = word latched at the rising edge,  word_f = word latched at the
-//     falling edge (both presented after the rising edge, per UG304 4.2.1
-//     block diagram).  If bring-up shows swapped halves, exchange the two
-//     always blocks below.
-//   - de_in/hs_in/vs_in are single-edge (rising-edge aligned) IT68051 outputs,
-//     setup 2.88ns / hold 1.88ns -> captured with one flop at the same edge.
+//   - qd_in[i] comes directly from an input pad (IBUF), as required by IDDR.
+//   - clk_vid is RX_PCLK buffered through DCE (PLL-free v1 flow).
+//   - IT68051 dual-pixel DDR: rising edge supplies Pixel0/1 and the following
+//     falling edge supplies Pixel2/3.  word_r/word_f retain that order.
+//   - de_in/hs_in/vs_in are single-edge aligned and are delayed to match IDDR.
 //
 // Reset: the DDR capture registers are deliberately NOT reset (a reset on a
 //   negedge capture register prevents IOLOGIC placement, and the video path
@@ -64,35 +45,49 @@ module iddr_bus_in (
     // video-domain outputs, all valid in the same clk_vid cycle
     output wire [59:0] word_r,       // 2-pixel word captured at PCLK rising edge
     output wire [59:0] word_f,       // 2-pixel word captured at PCLK falling edge
+    output wire        de_pre,
     output wire        de_s,         // syncs sampled at the rising edge
     output wire        hs_s,
     output wire        vs_s
 );
 
-    // ---- DDR capture, inferred into IOLOGIC (see header before changing) ----
-    reg [59:0] word_r_q;
-    reg [59:0] word_f_q;
-    always @(posedge clk_vid) word_r_q <= qd_in;   // rising-edge word
-    always @(negedge clk_vid) word_f_q <= qd_in;   // falling-edge word
-    assign word_r = word_r_q;
-    assign word_f = word_f_q;
+    // IOLOGIC DDR capture.  UG304 4.2.1: Q0 is the rising-edge word and Q1
+    // the falling-edge word; both are re-presented together at a rising edge
+    // two PCLK cycles after the rising-edge sample.  A one-bit probe using
+    // this exact Education version and GW5A-25A device passed synthesis/P&R
+    // and reported IOLOGIC=1, IDDR=1 (see iddr_probe/ in this test folder).
+    genvar i;
+    generate
+        for (i = 0; i < 60; i = i + 1) begin : g_iddr
+            IDDR u_iddr (
+                .D   (qd_in[i]),
+                .CLK (clk_vid),
+                .Q0  (word_r[i]),
+                .Q1  (word_f[i])
+            );
+        end
+    endgenerate
 
-    // ---- single-edge syncs ----
+    // Match the two extra rising-edge cycles from the IDDR outputs.  The first
+    // flop samples the pad; de_d3/hs_d3/vs_d3 are aligned with word_r/word_f.
     reg de_r, hs_r, vs_r;
+    reg de_d2, hs_d2, vs_d2;
+    reg de_d3, hs_d3, vs_d3;
     always @(posedge clk_vid or negedge rstn) begin
         if (!rstn) begin
-            de_r <= 1'b0;
-            hs_r <= 1'b0;
-            vs_r <= 1'b0;
+            de_r <= 1'b0; hs_r <= 1'b0; vs_r <= 1'b0;
+            de_d2 <= 1'b0; hs_d2 <= 1'b0; vs_d2 <= 1'b0;
+            de_d3 <= 1'b0; hs_d3 <= 1'b0; vs_d3 <= 1'b0;
         end else begin
-            de_r <= de_in;
-            hs_r <= hs_in;
-            vs_r <= vs_in;
+            de_r <= de_in; hs_r <= hs_in; vs_r <= vs_in;
+            de_d2 <= de_r; hs_d2 <= hs_r; vs_d2 <= vs_r;
+            de_d3 <= de_d2; hs_d3 <= hs_d2; vs_d3 <= vs_d2;
         end
     end
 
-    assign de_s = de_r;
-    assign hs_s = hs_r;
-    assign vs_s = vs_r;
+    assign de_pre = de_d2;
+    assign de_s = de_d3;
+    assign hs_s = hs_d3;
+    assign vs_s = vs_d3;
 
 endmodule

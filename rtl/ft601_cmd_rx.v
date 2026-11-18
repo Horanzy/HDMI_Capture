@@ -11,17 +11,15 @@
 //
 // Command packet (16 bytes, little-endian on the wire):
 //   byte0..3  'B','F','C','P'   (0x42 0x46 0x43 0x50)
-//   byte4     cmd   : 1=SET_CROP  2=SOFT_RESET  3=GET_STATUS (no-op, the
-//                    device sends a STATUS packet every frame anyway)
+//   byte4     cmd   : 2=SOFT_RESET; other opcodes are reserved/ignored
 //   byte5     len   : 8
-//   byte6..9  x0    (u32, source pixel column of the 640-wide window, %4)
-//   byte10..13 y0   (u32, source pixel row of the window)
-//   byte14..15 rsv
+//   byte6..15 reserved (crop is automatic from measured IT68051 timing)
 //
-// Timing: OE_N/RD_N are master outputs -> launched from NEGEDGE IOB flops
-// (same T4=4.8ns hold argument as the write path).  DATA from FT601 is
-// slave-driven (T1/T2 around the rising edge) -> captured with IOB flops at
-// the rising edge.  3 clock cycles per word - bandwidth is irrelevant here.
+// Timing experiment: OE_N/RD_N are launched from posedge registers and pass
+// through top-level output IODELAY.  C_WAIT preserves one full valid RD_N
+// cycle before data_q sampling.  DATA direction still changes on negedge, so
+// OE is enabled only after the FPGA has released the shared bus.  DATA from
+// FT601 is captured at rising edges.  Command bandwidth is intentionally low.
 // -----------------------------------------------------------------------------
 `timescale 1ns/1ps
 module ft601_cmd_rx #(
@@ -32,15 +30,12 @@ module ft601_cmd_rx #(
     // FT601 pads
     input  wire        rxf_n_pad,          // low = OUT FIFO has data
     input  wire [31:0] data_in_pad,        // FT601-driven DATA (captured here)
-    output reg         oe_n,               // negedge-launched, to pad
-    output reg         rd_n,               // negedge-launched, to pad
-    // decoded commands
-    output reg         cmd_wr,             // 1-clk pulse: crop regs updated
-    output reg  [11:0] cmd_x0,
-    output reg  [11:0] cmd_y0,
+    output reg         oe_n,               // posedge-launched, output IODELAY at top
+    output reg         rd_n,               // posedge-launched, output IODELAY at top
+    // decoded command
     output reg         cmd_soft_rst_req,
-    output reg  [7:0]  cmd_last,           // last accepted command opcode
-    output wire        cmd_active          // high while a read owns the bus
+    output wire        cmd_active,         // high while a read owns the bus
+    output wire        cmd_inhibit         // also blocks the last write before read entry
 );
 
     localparam [31:0] MAGIC = 32'h50434642;  // bytes 'B','F','C','P' on wire
@@ -60,26 +55,29 @@ module ft601_cmd_rx #(
 
     // ------------------------------------------------------- read sequence
     localparam [2:0] C_IDLE = 3'd0, C_LEAD = 3'd1, C_REQ = 3'd2,
-                     C_SAMP = 3'd3, C_GAP = 3'd4, C_DONE = 3'd5;
+                     C_SAMP = 3'd3, C_GAP = 3'd4, C_DONE = 3'd5,
+                     C_RELEASE = 3'd6, C_WAIT = 3'd7;
 
     reg [2:0]  cst;
     reg [1:0]  wcnt;                          // 0..3 words of the packet
     reg [1:0]  lead;
     reg [4:0]  junk;                          // junk-word flush budget
-    reg [31:0] w0, w1, w2, w3;
+    reg [31:0] w0, w1;
     reg        oe_req, rd_req;                // posedge decisions
 
-    assign cmd_active = (cst != C_IDLE) & EN_CMD_PATH;
+    // Keep bus-direction control on the original state-only path.  A separate
+    // inhibit stops the final posedge-launched write when a read is pending;
+    // this avoids adding the rxf combinational path to the negedge tri-state FFs.
+    assign cmd_active  = (cst != C_IDLE) & EN_CMD_PATH;
+    assign cmd_inhibit = ((cst != C_IDLE) || ((cst == C_IDLE) && !rxf_n_q)) & EN_CMD_PATH;
 
     always @(posedge clk_usb or negedge rstn) begin
         if (!rstn) begin
             cst <= C_IDLE; wcnt <= 2'd0; lead <= 2'd0; junk <= 5'd0;
-            w0 <= 32'h0; w1 <= 32'h0; w2 <= 32'h0; w3 <= 32'h0;
+            w0 <= 32'h0; w1 <= 32'h0;
             oe_req <= 1'b0; rd_req <= 1'b0;
-            cmd_wr <= 1'b0; cmd_x0 <= 12'd960; cmd_y0 <= 12'd400;
-            cmd_soft_rst_req <= 1'b0; cmd_last <= 8'h0;
+            cmd_soft_rst_req <= 1'b0;
         end else begin
-            cmd_wr <= 1'b0;
             cmd_soft_rst_req <= 1'b0;
             if (!EN_CMD_PATH) begin
                 cst <= C_IDLE;
@@ -101,7 +99,12 @@ module ft601_cmd_rx #(
                             cst   <= C_REQ;
                         end
                     end
-                    C_REQ: begin                  // RD_N low; sample at next posedge
+                    C_REQ: begin                  // registered RD_N launches next posedge
+                        oe_req <= 1'b1;
+                        rd_req <= 1'b0;
+                        cst    <= C_WAIT;
+                    end
+                    C_WAIT: begin                 // RD_N is low before this sampling edge
                         oe_req <= 1'b1;
                         rd_req <= 1'b0;
                         cst    <= C_SAMP;
@@ -111,8 +114,7 @@ module ft601_cmd_rx #(
                         case (wcnt)
                             2'd0: w0 <= data_q;
                             2'd1: w1 <= data_q;
-                            2'd2: w2 <= data_q;
-                            2'd3: w3 <= data_q;
+                            default: ; // drain the remaining two words
                         endcase
                         if (wcnt == 2'd3) begin
                             wcnt <= 2'd0;
@@ -126,24 +128,24 @@ module ft601_cmd_rx #(
                     C_DONE: begin
                         oe_req <= 1'b0;           // release bus
                         if (w0 == MAGIC && w1[15:8] == 8'd8) begin
-                            cmd_last <= w1[7:0];
-                            case (w1[7:0])
-                                8'd1: begin       // SET_CROP
-                                    cmd_x0 <= w2[11:0];
-                                    cmd_y0 <= w3[11:0];
-                                    cmd_wr <= 1'b1;
-                                end
-                                8'd2: cmd_soft_rst_req <= 1'b1;
-                                default: ;        // 3=GET_STATUS: passive
-                            endcase
-                            cst <= C_IDLE;
+                            if (w1[7:0] == 8'd2)
+                                cmd_soft_rst_req <= 1'b1;
+                            cst <= C_RELEASE;
                         end else if (junk != 5'h1F) begin
                             junk <= junk + 5'd1;
                             lead <= 2'd1;         // short lead for continuation
                             cst  <= C_LEAD;       // keep draining junk
                         end else begin
-                            cst <= C_IDLE;
+                            cst <= C_RELEASE;
                         end
+                    end
+                    C_RELEASE: begin
+                        // OE_N rises after this posedge through output delay.
+                        // Keep DATA tri-stated for the extra cycle so the FT601
+                        // stops driving before the FPGA resumes write ownership.
+                        oe_req <= 1'b0;
+                        rd_req <= 1'b0;
+                        cst    <= C_IDLE;
                     end
                     default: cst <= C_IDLE;
                 endcase
@@ -151,8 +153,9 @@ module ft601_cmd_rx #(
         end
     end
 
-    // ------------------------------------ negedge launch of OE_N / RD_N pads
-    always @(negedge clk_usb or negedge rstn) begin
+    // Posedge launch + top-level output IODELAY.  C_WAIT compensates for the
+    // registered output so data_q still samples a word driven by an active RD_N.
+    always @(posedge clk_usb or negedge rstn) begin
         if (!rstn) begin
             oe_n <= 1'b1;
             rd_n <= 1'b1;

@@ -2,13 +2,10 @@
 // async_fifo_dc.v -- portable dual-clock FIFO (inferred BSRAM, gray pointers)
 //
 // Function
-//   Independent-clock FIFO handing 64-bit line-packet words from the video
-//   domain (write, ~148.5 MHz) to the FT601/USB domain (read, 100 MHz).
-//   The write side produces ONE 64-bit word per PCLK cycle (falling+rising
-//   YUV pair packed as {hi=f-word, lo=r-word}); the read side splits each
-//   64-bit word into two 32-bit FT601 bus words (lo first).
-//   True dual-port inferred BSRAM + Cummings-style gray-pointer CDC - no
-//   vendor FIFO primitive, portable and conservative.
+//   Independent-clock FIFO handing 128-bit raw line-packet words from the
+//   video domain to the FT601/USB domain.  The writer produces at most one
+//   word per PCLK; ft601_master splits each word into four 32-bit bus words.
+//   True dual-port inferred BSRAM + Cummings-style gray-pointer CDC.
 //
 // Interface / handshake
 //   Write: wr_en && !wr_full commits one word in wr_clk.
@@ -16,8 +13,7 @@
 //          presented ONE rd_clk LATER (registered BSRAM read).  The consumer
 //          must keep a prefetch and only assert rd_en when it can accept.
 //
-// Parameters: DW data width (64), DEPTH_LOG2 = 11 -> 2048 x 64 b = 16 KiB
-//   (~12.6 line packets) -> 8 x 18 Kb BSRAM.
+// Parameters used by the top: DW=128, DEPTH_LOG2=10 -> 1024 x 128 b = 16 KiB.
 //
 // Reset: wr_rstn / rd_rstn async assert, sync release; hold both >= 3 cycles
 // of each clock.
@@ -99,7 +95,8 @@ module async_fifo_dc #(
     // free-space view (write domain, stale by ~2 wr_clk + 2 rd_clk)
     wire [PW-1:0] rbin_w = gray2bin(rgray_wq2);
     wire [PW-1:0] occ_w  = wbin - rbin_w;
-    assign wr_free_words = (1 << AW) - {{1'b0}, occ_w};
+    localparam [PW-1:0] DEPTH_COUNT = {1'b1, {AW{1'b0}}};
+    assign wr_free_words = DEPTH_COUNT - occ_w;
 
     // --------------------------------------------------------- read pointers
     reg [PW-1:0] rbin, rgray;

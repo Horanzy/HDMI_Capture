@@ -2,27 +2,26 @@
 // it68051_capture_top.v -- USB HDMI capture card, Gowin GW5A-LV25UG324 (U1)
 //
 // Data flow
-//   IT68051 (U5) dual-pixel DDR TTL out, PCLK=148.5 MHz @2560x1440 CVT-RB:
-//     QD[59:0] via 60x inferred DDR input registers (IOLOGIC; iddr_bus_in.v
-//     header documents why the bare IDDR primitive must not be used)
+//   IT68051 (U5) dual-pixel DDR TTL out; FullBusDDR PCLK=TMDS/4
+//     (145 MHz for the local 2560x1440@144 EDID's 580 MHz timing):
+//     QD[59:0] via IDDR primitives in IOLOGIC (iddr_bus_in.v)
 //     -> word_r/word_f (2 pixels each)
-//     -> video_stream: crop 640x640 (x0/y0 default 960/400, in-band settable)
-//        + RGB888->YUV422 (BT.601/709, UYVY) + 16B header + 1280B payload
-//     -> async FIFO (2048x64 BSRAM, gray pointers, 148.5M <-> 100M)
-//     -> ft601_master: 245-sync-FIFO bursts into FT601Q (1 word/clk, 400MB/s)
+//     -> video_stream: measured centre crop 640x640, latched at frame boundary
+//        + default lossless packed YUV42210 (1600B payload) or automatic raw slots
+//     -> async FIFO (1024x128 BSRAM, gray pointers, clk_vid <-> 100M clk_usb)
+//     -> ft601_master: 245-sync-FIFO bursts into FT601Q (1 word/clk)
 //   FT601 packs USB SuperSpeed Bulk IN (MPS 1024, bMaxBurst 15 per FT601
-//   configuration); a 1296B line packet written as one continuous bus
-//   transaction leaves as a 1024B + a 272B short USB packet.
+//   configuration); a 1616B default line packet is streamed without a frame buffer.
 //
 // Control flow
 //   init_ctrl (USB domain): reset IT68051 -> I2C replay of the EVB init table
 //   (ROM) -> EDID upload (custom 2560x1440@144 EDID from edid_init.v written
 //   into the IT68051 EDID SRAM at I2C slave 0xA8, mirroring the EVB
 //   iTE6805_EDID.c flow; the whole phase completes before HPD ever asserts)
-//   -> wait for stable video -> HPD assert (pad LOW).  Stream loss or host
-//   SOFT_RESET -> HPD release + full re-init incl. fresh EDID.  Host->device
-//   commands (SET_CROP / SOFT_RESET / GET_STATUS) arrive through the FT601
-//   OUT FIFO (ft601_cmd_rx, parameter-gated; EN_CMD_PATH=0 restores the
+//   -> assert HPD once the EDID is complete -> wait for stable video and
+//   enable streaming.  Stream loss or host SOFT_RESET releases HPD and runs
+//   initialization again.  OUT commands use ft601_cmd_rx; only SOFT_RESET is
+//   active because crop and format are automatic (EN_CMD_PATH=0 restores the
 //   frozen "read direction unused" behaviour).
 //
 // Port names follow the V1.4 netlist net names at U1 and match
@@ -42,9 +41,10 @@
 `timescale 1ns/1ps
 (* syn_useioff = 1 *)
 module it68051_capture_top #(
-    parameter BT709       = 0,   // RGB->YUV matrix: 0=BT.601, 1=BT.709
+    parameter AUTO_FORMAT = 0,   // 0 = fixed IT68051 YUV422 output (default); 1 = auto RGB/444/422
     parameter EN_CMD_PATH = 1,   // 0 = frozen v1: OE_N/RD_N high, no commands
-    parameter FIFO_LOG2   = 11   // line FIFO words = 2**FIFO_LOG2 (16 KiB ~ 12.6 line packets)
+    parameter FIFO_LOG2   = 10,  // 1024 x 128 bit = 16 KiB
+    parameter FT601_OUT_DLY = 160 // output IODELAY steps, nominally 12.5 ps each
 ) (
     // ---- IT68051 video output (dual-pixel DDR) ---------------------------
     input  wire RX_PCLK,
@@ -136,7 +136,7 @@ module it68051_capture_top #(
         A_B11, A_B10, A_B9, A_B8, A_B7, A_B6, A_B5, A_B4, A_B3, A_B2}; // QD[9:0]
 
     wire [59:0] word_r, word_f;
-    wire de_s, hs_s, vs_s;
+    wire de_pre, de_s, hs_s, vs_s;
 
     // ===================================================== video telemetry
     // hs_tick_v / htot_ok_v / stable_v feed the USB-domain supervision.
@@ -149,16 +149,21 @@ module it68051_capture_top #(
     reg  [1:0] s_x0 [0:11];
     reg  [1:0] s_y0 [0:11];
     reg  [1:0] s_st [0:15];
+    reg  [1:0] s_fmt [0:2];
     wire       stream_en_v;
     wire [11:0] crop_x0_v, crop_y0_v;
     wire [15:0] status_v;
+    wire [2:0]  pixel_fmt_v;
 
     wire       stream_en;                 // USB-domain stream gate (init_ctrl)
-    wire [11:0] crop_x0, crop_y0;         // USB-domain crop regs (cmd_rx)
+    wire [11:0] crop_x0, crop_y0;         // USB-domain measured-centre crop (init_ctrl)
     wire [15:0] status_bits;              // USB-domain status (init_ctrl)
-    wire [7:0] cmd_last;
+    wire [2:0]  pixel_fmt;                // fixed packed-422 fmt 5 or automatic raw format
+    wire [2:0]  detected_pixel_fmt;
+    assign pixel_fmt = AUTO_FORMAT ? detected_pixel_fmt : 3'd5;
     wire       cmd_soft_rst_req;
     wire       cmd_soft_rst;
+    wire       vid_int_event;
 
     reg [7:0]  act_div;
     reg        act_tog;
@@ -169,17 +174,24 @@ module it68051_capture_top #(
 
     // ===================================================== line FIFO wires
     wire        fifo_wr_en, fifo_wr_full;
-    wire [11:0] fifo_free;
-    wire [63:0] fifo_wr_data;
+    wire [10:0] fifo_free;
+    wire [127:0] fifo_wr_data;
     wire        fifo_rd_en, fifo_rd_valid, fifo_rd_empty;
-    wire [63:0] fifo_rd_data;
+    wire [127:0] fifo_rd_data;
 
     // ===================================================== FT601 bus wires
     wire [31:0] wr_o_data;
     wire [3:0]  wr_o_be;
     wire        wr_o_wr_n;
     wire [31:0] data_bus_in;
-    wire        cmd_oe_n, cmd_rd_n, cmd_wr, cmd_active;
+    wire        cmd_oe_n, cmd_rd_n, cmd_active, cmd_inhibit;
+    wire [35:0] ft601_out_raw = {wr_o_be, wr_o_data};
+    wire [35:0] ft601_out_dly;
+    wire        ft601_wr_n_dly;
+    wire        ft601_oe_n_dly, ft601_rd_n_dly;
+    // One local tri-state launch register per DATA/BE IOB.  A single fabric
+    // register fanning out to 36 pins added about 4 ns and failed setup.
+    (* syn_preserve = 1, syn_useioff = 1 *) reg [35:0] cmd_active_n;
 
     // ===================================================== I2C wires
     wire        scl_drv_n, sda_drv_n;
@@ -206,6 +218,7 @@ module it68051_capture_top #(
                 s_x0[si] <= 2'b00; s_y0[si] <= 2'b00;
             end
             for (si = 0; si < 16; si = si + 1) s_st[si] <= 2'b00;
+            for (si = 0; si < 3; si = si + 1) s_fmt[si] <= 2'b00;
         end else begin
             sync_en_q <= {sync_en_q[0], stream_en};
             for (si = 0; si < 12; si = si + 1) begin
@@ -214,6 +227,8 @@ module it68051_capture_top #(
             end
             for (si = 0; si < 16; si = si + 1)
                 s_st[si] <= {s_st[si][0], status_bits[si]};
+            for (si = 0; si < 3; si = si + 1)
+                s_fmt[si] <= {s_fmt[si][0], pixel_fmt[si]};
         end
     end
     assign stream_en_v = sync_en_q[1];
@@ -225,6 +240,9 @@ module it68051_capture_top #(
         end
         for (gi = 0; gi < 16; gi = gi + 1) begin : g_st
             assign status_v[gi] = s_st[gi][1];
+        end
+        for (gi = 0; gi < 3; gi = gi + 1) begin : g_fmt
+            assign pixel_fmt_v[gi] = s_fmt[gi][1];
         end
     endgenerate
 
@@ -263,20 +281,23 @@ module it68051_capture_top #(
         .vs_in   (RX_VSYNC),
         .word_r  (word_r),
         .word_f  (word_f),
+        .de_pre  (de_pre),
         .de_s    (de_s),
         .hs_s    (hs_s),
         .vs_s    (vs_s)
     );
 
-    video_stream #(.BT709(BT709)) u_vstream (
+    video_stream #(.CROP_W(640), .PACK_422(!AUTO_FORMAT)) u_vstream (
         .clk_vid      (clk_vid),
         .rstn         (vid_rstn),
         .word_r       (word_r),
         .word_f       (word_f),
+        .de_pre       (de_pre),
         .de_s         (de_s),
         .hs_s         (hs_s),
         .vs_s         (vs_s),
         .stream_en    (stream_en_v),
+        .pixel_fmt    (pixel_fmt_v),
         .crop_x0      (crop_x0_v),
         .crop_y0      (crop_y0_v),
         .status_bits  (status_v),
@@ -289,7 +310,7 @@ module it68051_capture_top #(
         .wr_free_words(fifo_free)
     );
 
-    async_fifo_dc #(.DW(64), .DEPTH_LOG2(FIFO_LOG2)) u_linefifo (
+    async_fifo_dc #(.DW(128), .DEPTH_LOG2(FIFO_LOG2)) u_linefifo (
         .wr_clk       (clk_vid),
         .wr_rstn      (vid_rstn),
         .wr_en        (fifo_wr_en),
@@ -313,7 +334,7 @@ module it68051_capture_top #(
         .fifo_rd_data (fifo_rd_data),
         .fifo_rd_empty(fifo_rd_empty),
         .txe_n_pad    (FT601_TXE_N),
-        .cmd_inhibit  (cmd_active),
+        .cmd_inhibit  (cmd_inhibit),
         .o_data       (wr_o_data),
         .o_be         (wr_o_be),
         .o_wr_n       (wr_o_wr_n)
@@ -326,12 +347,54 @@ module it68051_capture_top #(
         .data_in_pad     (data_bus_in),
         .oe_n            (cmd_oe_n),
         .rd_n            (cmd_rd_n),
-        .cmd_wr          (cmd_wr),
-        .cmd_x0          (crop_x0),
-        .cmd_y0          (crop_y0),
         .cmd_soft_rst_req(cmd_soft_rst_req),
-        .cmd_last        (cmd_last),
-        .cmd_active      (cmd_active)
+        .cmd_active      (cmd_active),
+        .cmd_inhibit     (cmd_inhibit)
+    );
+
+    // FT601 requires 4.8 ns hold after its rising sampling edge.  The command
+    // FSM decides direction on posedge, but the actual DATA/BE tri-state
+    // control must change only on the following negedge, like OE_N/RD_N/data.
+    // A posedge combinational cmd_active here caused 36 real hold violations.
+    always @(negedge clk_usb or negedge usb_rstn) begin
+        if (!usb_rstn) cmd_active_n <= 36'b0;
+        else           cmd_active_n <= {36{cmd_active}};
+    end
+
+    // Output-only delay experiment.  Direction control remains unchanged;
+    // delaying DATA/BE/WR_N must not delay the bus release decision.
+    generate
+        for (gi = 0; gi < 36; gi = gi + 1) begin : g_ft601_out_delay
+            IODELAY #(
+                .C_STATIC_DLY(FT601_OUT_DLY),
+                .DYN_DLY_EN("FALSE"),
+                .ADAPT_EN("FALSE")
+            ) u_delay (
+                .DO(ft601_out_dly[gi]), .DF(), .DI(ft601_out_raw[gi]),
+                .DLYSTEP(8'd0), .SDTAP(1'b0), .VALUE(1'b0)
+            );
+        end
+    endgenerate
+    IODELAY #(
+        .C_STATIC_DLY(FT601_OUT_DLY),
+        .DYN_DLY_EN("FALSE"), .ADAPT_EN("FALSE")
+    ) u_wr_delay (
+        .DO(ft601_wr_n_dly), .DF(), .DI(wr_o_wr_n),
+        .DLYSTEP(8'd0), .SDTAP(1'b0), .VALUE(1'b0)
+    );
+    IODELAY #(
+        .C_STATIC_DLY(FT601_OUT_DLY),
+        .DYN_DLY_EN("FALSE"), .ADAPT_EN("FALSE")
+    ) u_oe_delay (
+        .DO(ft601_oe_n_dly), .DF(), .DI(cmd_oe_n),
+        .DLYSTEP(8'd0), .SDTAP(1'b0), .VALUE(1'b0)
+    );
+    IODELAY #(
+        .C_STATIC_DLY(FT601_OUT_DLY),
+        .DYN_DLY_EN("FALSE"), .ADAPT_EN("FALSE")
+    ) u_rd_delay (
+        .DO(ft601_rd_n_dly), .DF(), .DI(cmd_rd_n),
+        .DLYSTEP(8'd0), .SDTAP(1'b0), .VALUE(1'b0)
     );
 
     // DATA/BE direction: FPGA drives while writing; releases only while the
@@ -346,45 +409,45 @@ module it68051_capture_top #(
         FT601_DATA_7,  FT601_DATA_6,  FT601_DATA_5,  FT601_DATA_4,
         FT601_DATA_3,  FT601_DATA_2,  FT601_DATA_1,  FT601_DATA_0 };
 
-    assign FT601_DATA_0  = cmd_active ? 1'bz : wr_o_data[0];
-    assign FT601_DATA_1  = cmd_active ? 1'bz : wr_o_data[1];
-    assign FT601_DATA_2  = cmd_active ? 1'bz : wr_o_data[2];
-    assign FT601_DATA_3  = cmd_active ? 1'bz : wr_o_data[3];
-    assign FT601_DATA_4  = cmd_active ? 1'bz : wr_o_data[4];
-    assign FT601_DATA_5  = cmd_active ? 1'bz : wr_o_data[5];
-    assign FT601_DATA_6  = cmd_active ? 1'bz : wr_o_data[6];
-    assign FT601_DATA_7  = cmd_active ? 1'bz : wr_o_data[7];
-    assign FT601_DATA_8  = cmd_active ? 1'bz : wr_o_data[8];
-    assign FT601_DATA_9  = cmd_active ? 1'bz : wr_o_data[9];
-    assign FT601_DATA_10 = cmd_active ? 1'bz : wr_o_data[10];
-    assign FT601_DATA_11 = cmd_active ? 1'bz : wr_o_data[11];
-    assign FT601_DATA_12 = cmd_active ? 1'bz : wr_o_data[12];
-    assign FT601_DATA_13 = cmd_active ? 1'bz : wr_o_data[13];
-    assign FT601_DATA_14 = cmd_active ? 1'bz : wr_o_data[14];
-    assign FT601_DATA_15 = cmd_active ? 1'bz : wr_o_data[15];
-    assign FT601_DATA_16 = cmd_active ? 1'bz : wr_o_data[16];
-    assign FT601_DATA_17 = cmd_active ? 1'bz : wr_o_data[17];
-    assign FT601_DATA_18 = cmd_active ? 1'bz : wr_o_data[18];
-    assign FT601_DATA_19 = cmd_active ? 1'bz : wr_o_data[19];
-    assign FT601_DATA_20 = cmd_active ? 1'bz : wr_o_data[20];
-    assign FT601_DATA_21 = cmd_active ? 1'bz : wr_o_data[21];
-    assign FT601_DATA_22 = cmd_active ? 1'bz : wr_o_data[22];
-    assign FT601_DATA_23 = cmd_active ? 1'bz : wr_o_data[23];
-    assign FT601_DATA_24 = cmd_active ? 1'bz : wr_o_data[24];
-    assign FT601_DATA_25 = cmd_active ? 1'bz : wr_o_data[25];
-    assign FT601_DATA_26 = cmd_active ? 1'bz : wr_o_data[26];
-    assign FT601_DATA_27 = cmd_active ? 1'bz : wr_o_data[27];
-    assign FT601_DATA_28 = cmd_active ? 1'bz : wr_o_data[28];
-    assign FT601_DATA_29 = cmd_active ? 1'bz : wr_o_data[29];
-    assign FT601_DATA_30 = cmd_active ? 1'bz : wr_o_data[30];
-    assign FT601_DATA_31 = cmd_active ? 1'bz : wr_o_data[31];
-    assign FT601_BE_0    = cmd_active ? 1'bz : wr_o_be[0];
-    assign FT601_BE_1    = cmd_active ? 1'bz : wr_o_be[1];
-    assign FT601_BE_2    = cmd_active ? 1'bz : wr_o_be[2];
-    assign FT601_BE_3    = cmd_active ? 1'bz : wr_o_be[3];
-    assign FT601_WR_N    = wr_o_wr_n;
-    assign FT601_OE_N    = cmd_oe_n;
-    assign FT601_RD_N    = cmd_rd_n;
+    assign FT601_DATA_0  = cmd_active_n[0]  ? 1'bz : ft601_out_dly[0];
+    assign FT601_DATA_1  = cmd_active_n[1]  ? 1'bz : ft601_out_dly[1];
+    assign FT601_DATA_2  = cmd_active_n[2]  ? 1'bz : ft601_out_dly[2];
+    assign FT601_DATA_3  = cmd_active_n[3]  ? 1'bz : ft601_out_dly[3];
+    assign FT601_DATA_4  = cmd_active_n[4]  ? 1'bz : ft601_out_dly[4];
+    assign FT601_DATA_5  = cmd_active_n[5]  ? 1'bz : ft601_out_dly[5];
+    assign FT601_DATA_6  = cmd_active_n[6]  ? 1'bz : ft601_out_dly[6];
+    assign FT601_DATA_7  = cmd_active_n[7]  ? 1'bz : ft601_out_dly[7];
+    assign FT601_DATA_8  = cmd_active_n[8]  ? 1'bz : ft601_out_dly[8];
+    assign FT601_DATA_9  = cmd_active_n[9]  ? 1'bz : ft601_out_dly[9];
+    assign FT601_DATA_10 = cmd_active_n[10] ? 1'bz : ft601_out_dly[10];
+    assign FT601_DATA_11 = cmd_active_n[11] ? 1'bz : ft601_out_dly[11];
+    assign FT601_DATA_12 = cmd_active_n[12] ? 1'bz : ft601_out_dly[12];
+    assign FT601_DATA_13 = cmd_active_n[13] ? 1'bz : ft601_out_dly[13];
+    assign FT601_DATA_14 = cmd_active_n[14] ? 1'bz : ft601_out_dly[14];
+    assign FT601_DATA_15 = cmd_active_n[15] ? 1'bz : ft601_out_dly[15];
+    assign FT601_DATA_16 = cmd_active_n[16] ? 1'bz : ft601_out_dly[16];
+    assign FT601_DATA_17 = cmd_active_n[17] ? 1'bz : ft601_out_dly[17];
+    assign FT601_DATA_18 = cmd_active_n[18] ? 1'bz : ft601_out_dly[18];
+    assign FT601_DATA_19 = cmd_active_n[19] ? 1'bz : ft601_out_dly[19];
+    assign FT601_DATA_20 = cmd_active_n[20] ? 1'bz : ft601_out_dly[20];
+    assign FT601_DATA_21 = cmd_active_n[21] ? 1'bz : ft601_out_dly[21];
+    assign FT601_DATA_22 = cmd_active_n[22] ? 1'bz : ft601_out_dly[22];
+    assign FT601_DATA_23 = cmd_active_n[23] ? 1'bz : ft601_out_dly[23];
+    assign FT601_DATA_24 = cmd_active_n[24] ? 1'bz : ft601_out_dly[24];
+    assign FT601_DATA_25 = cmd_active_n[25] ? 1'bz : ft601_out_dly[25];
+    assign FT601_DATA_26 = cmd_active_n[26] ? 1'bz : ft601_out_dly[26];
+    assign FT601_DATA_27 = cmd_active_n[27] ? 1'bz : ft601_out_dly[27];
+    assign FT601_DATA_28 = cmd_active_n[28] ? 1'bz : ft601_out_dly[28];
+    assign FT601_DATA_29 = cmd_active_n[29] ? 1'bz : ft601_out_dly[29];
+    assign FT601_DATA_30 = cmd_active_n[30] ? 1'bz : ft601_out_dly[30];
+    assign FT601_DATA_31 = cmd_active_n[31] ? 1'bz : ft601_out_dly[31];
+    assign FT601_BE_0    = cmd_active_n[32] ? 1'bz : ft601_out_dly[32];
+    assign FT601_BE_1    = cmd_active_n[33] ? 1'bz : ft601_out_dly[33];
+    assign FT601_BE_2    = cmd_active_n[34] ? 1'bz : ft601_out_dly[34];
+    assign FT601_BE_3    = cmd_active_n[35] ? 1'bz : ft601_out_dly[35];
+    assign FT601_WR_N    = ft601_wr_n_dly;
+    assign FT601_OE_N    = ft601_oe_n_dly;
+    assign FT601_RD_N    = ft601_rd_n_dly;
 
     // ===================================================== I2C + supervision
     wire scl_in = it68051_pcscl;
@@ -420,7 +483,7 @@ module it68051_capture_top #(
         .scl_stuck(i2c_stuck)
     );
 
-    it68051_init_rom #(.DEPTH(191)) u_rom (
+    it68051_init_rom #(.DEPTH(221)) u_rom (
         .clk   (clk_usb),
         .raddr (rom_raddr),
         .rdata (rom_rdata)
@@ -439,6 +502,7 @@ module it68051_capture_top #(
     );
 
     init_ctrl #(
+        .AUTO_FORMAT    (AUTO_FORMAT),
         .EN_EDID        (1),
         .EN_EDID_RB     (1),
         .EDID_SCR_DEPTH (528)
@@ -463,10 +527,14 @@ module it68051_capture_top #(
         .vid_act_edge    (vid_act_edge),
         .vid_htot_ok     (htot_ok_u),
         .vid_stable      (stab_u),
+        .vid_int_event   (vid_int_event),
         .sysrstn_n       (sysrstn_n),
         .hpd_assert      (hpd_assert),
         .ft601_rstn_n    (ft601_rstn_n),
         .stream_en       (stream_en),
+        .pixel_fmt       (detected_pixel_fmt),
+        .crop_x0         (crop_x0),
+        .crop_y0         (crop_y0),
         .status_bits     (status_bits),
         .cmd_soft_rst_req(cmd_soft_rst_req),
         .cmd_soft_rst    (cmd_soft_rst)
@@ -478,9 +546,17 @@ module it68051_capture_top #(
 
     // inputs present on the board but unused by v1 logic (kept for bring-up
     // probes; the ports stay so the .cst pin locations remain valid)
-    (* keep *) reg unused_int, unused_siwu, unused_wakeup;
+    (* keep *) reg unused_siwu, unused_wakeup;
+    reg [2:0] int_q;
+    // INT# is low-active and open-drain.  Level triggering also services a
+    // second source event that arrives while INT# remains asserted; the
+    // controller clears 0x10/0x11/0x12 before returning to M_ONLINE.
+    assign vid_int_event = ~int_q[2];
+    always @(posedge clk_usb or negedge usb_rstn) begin
+        if (!usb_rstn) int_q <= 3'b111;
+        else int_q <= {int_q[1:0], it68051_int};
+    end
     always @(posedge clk_usb) begin
-        unused_int    <= it68051_int;
         unused_siwu   <= FT601_SIWU_N;
         unused_wakeup <= FT601_WAKEUP_N;
     end

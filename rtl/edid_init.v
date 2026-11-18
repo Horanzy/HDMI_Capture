@@ -39,7 +39,7 @@ module edid_init #(
     output reg  [7:0]  byte_data
 );
 
-    (* syn_romstyle = "EBR" *) reg [31:0] scr_mem [0:SCRIPT_DEPTH-1];
+    reg [31:0] scr_mem [0:SCRIPT_DEPTH-1];
     reg [7:0]  edid_mem [0:EDID_DEPTH-1];
 
     initial begin
@@ -584,10 +584,10 @@ module edid_init #(
         scr_mem[264] = 32'h00C50100; // enable port0 internal EDID (clear DisableShadow, EDID.c:36)
         scr_mem[265] = 32'h04C50100; // enable port1 internal EDID (EDID.c:37-38)
         scr_mem[266] = 32'h00C51010; // port0 EDID/SCDC shadow reset pulse (EDID.c:41-42)
-        scr_mem[267] = 32'h20000000; // delay 1 ms (EDID.c:43 delay1ms)
+        scr_mem[267] = 32'h20000100; // delay 1 ms (EDID.c:43 delay1ms)
         scr_mem[268] = 32'h00C51000; // port0 reset release (EDID.c:44)
         scr_mem[269] = 32'h04C51010; // port1 EDID/SCDC shadow reset pulse (EDID.c:46-47)
-        scr_mem[270] = 32'h20000000; // delay 1 ms (EDID.c:48 delay1ms)
+        scr_mem[270] = 32'h20000100; // delay 1 ms (EDID.c:48 delay1ms)
         scr_mem[271] = 32'h04C51000; // port1 reset release (EDID.c:49)
         scr_mem[272] = 32'h100FFF00; // chgbank(0) final (EDID.c:50)
         scr_mem[273] = 32'h60000000; // read back EDID RAM[000], compare with ROM (skip via EN_EDID_RB=0); first NACK (0xA9 unreadable) jumps straight to END

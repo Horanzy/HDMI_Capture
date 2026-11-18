@@ -31,15 +31,15 @@
 //     EDRD read-back mismatch counts into ack_cnt (status [11:8]); an
 //     address NACK on 0xA9 is not an error (readability not guaranteed by
 //     EVB source) and jumps straight to the script END.
-//   M_TBLDONE  : init_done (EDID included), 10 ms settle
-//   M_WAIT     : video must look valid (line activity + even HTotal/DE widths,
-//                 video_stream stream_stable) for STREAM_STABLE_MS
-//   M_ONLINE   : HPD asserted = pad driven LOW (external Q3 releases the HDMI
-//                HPD line -> source sees "valid").  Supervision: loss of
-//                stream_ok for STREAM_LOST_MS, or host SOFT_RESET, releases
-//                HPD and replays the full init + EDID (M_RST_LO).
-//   M_LOST/M_ERR : cooldown, then full re-init.  HPD never re-asserts without
-//                a freshly initialized chip, a fresh EDID and a stable stream.
+//   M_TBLDONE  : init_done (EDID included), 10 ms settle, then assert HPD
+//   M_WAIT     : HPD stays asserted while the source reads EDID and starts
+//                video; stream_en opens only after stable video
+//   M_ONLINE   : HPD remains asserted.  Supervision: loss of stream_ok for
+//                STREAM_LOST_MS, or host SOFT_RESET, releases HPD and replays
+//                the full init + EDID (M_RST_LO).
+//   M_LOST/M_ERR : cooldown, then full re-init.  HPD is asserted as soon as
+//                the fresh EDID is complete, not gated on a video signal that
+//                a normal HDMI source cannot produce before HPD.
 //
 // Fix vs v1: DELAY ops no longer issue a stray I2C START (which made the
 // engine complete after ~10 us instead of the programmed ms -- the EDID
@@ -53,6 +53,7 @@
 // -----------------------------------------------------------------------------
 `timescale 1ns/1ps
 module init_ctrl #(
+    parameter AUTO_FORMAT       = 0,   // 0 = fixed YUV422; 1 = INT/AVI automatic format
     parameter STREAM_STABLE_MS = 100,
     parameter STREAM_LOST_MS   = 50,
     parameter POLL_TIMEOUT_MS  = 250,
@@ -88,12 +89,16 @@ module init_ctrl #(
     input  wire        vid_act_edge,
     input  wire        vid_htot_ok,
     input  wire        vid_stable,
+    input  wire        vid_int_event,      // synchronized falling edge of IT68051 INT/SCDT
 
     // outputs
     output reg         sysrstn_n,
     output reg         hpd_assert,       // 1 = drive HPD pad LOW (source valid)
     output reg         ft601_rstn_n,
     output reg         stream_en,
+    output reg  [2:0]  pixel_fmt,          // 0 raw422, 3 RGB10, 4 YUV44410; fixed top uses 5 packed422
+    output reg  [11:0] crop_x0,            // measured-timing centre, updated at video service
+    output reg  [11:0] crop_y0,
     output reg  [15:0] status_bits,
     input  wire        cmd_soft_rst_req,
     output reg         cmd_soft_rst
@@ -103,7 +108,7 @@ module init_ctrl #(
     localparam [7:0] DEV_EDID_W = 8'hA8, DEV_EDID_R = 8'hA9;  // EDID SRAM slave
     localparam [3:0] OP_WRITE = 4'h0, OP_WRITEF = 4'h1, OP_DELAY = 4'h2,
                      OP_POLL  = 4'h3, OP_END    = 4'h4,
-                     OP_EDWR  = 4'h5, OP_EDRD   = 4'h6;
+                     OP_EDWR  = 4'h5, OP_EDRD   = 4'h6, OP_READ = 4'h7;
     localparam [7:0] STABLE_MS = STREAM_STABLE_MS[7:0];
     localparam [7:0] LOST_MS   = STREAM_LOST_MS[7:0];
     localparam [7:0] POLL_MS   = POLL_TIMEOUT_MS[7:0];
@@ -146,7 +151,8 @@ module init_ctrl #(
     localparam [3:0]
         M_POR = 4'd0, M_RST_LO = 4'd1, M_RST_WAIT = 4'd2, M_FETCH = 4'd3,
         M_RUN = 4'd4, M_NEXT   = 4'd5, M_TBLDONE  = 4'd6, M_WAIT  = 4'd7,
-        M_ONLINE = 4'd8, M_LOST = 4'd9, M_ERR = 4'd10, M_DECODE = 4'd11;
+        M_ONLINE = 4'd8, M_LOST = 4'd9, M_ERR = 4'd10, M_DECODE = 4'd11,
+        M_SVC_START = 4'd12;
 
     // byte steps for WRITE/WRITEF/POLL ops
     localparam [4:0]
@@ -169,14 +175,68 @@ module init_ctrl #(
     reg        soft_seen;
     reg        edid_phase;                  // executing edid_init script ROM
     reg        rb_jmp;                      // EDRD NACK -> jump to script END
+    // Video service reads AVI DB1/2/3/4, HActive and VActive before applying
+    // output format and crop.  Phases 0..7 are reads, 8..10 configure 6E/6B/6C,
+    // 11 writes the selected CSC table, 12..14 clear INT; phase 14 completes.
+    reg [3:0]  service_phase;
+    reg [2:0]  det_fmt;
+    reg [7:0]  det_out;
+    reg [1:0]  det_csc;
+    reg [1:0]  det_input_fmt;
+    reg [1:0]  det_colorimetry;
+    reg [2:0]  det_ext_colorimetry;
+    reg [1:0]  det_rgb_range;
+    reg [7:0]  det_hlo, det_vlo;
+    reg [14:0] det_width;
+    (* syn_preserve = 1 *) reg [4:0] csc_index;
+    (* syn_preserve = 1 *) reg [1:0] csc_sel;
+    (* keep = 1 *) wire [7:0] csc_data;
+    reg        det_crop_valid;
+    reg        det_changed, svc_from_online, detect_done;
+
+    csc_matrix_rom u_csc_rom (.matrix_sel(csc_sel), .byte_index(csc_index),
+                              .byte_data(csc_data));
+
+    function [2:0] fmt_from_input;
+        input [1:0] c;
+        begin
+            if (!AUTO_FORMAT)
+                fmt_from_input = 3'd0; // logical fixed-422; top maps this to packed fmt 5
+            else begin
+                case (c)
+                    2'b00: fmt_from_input = 3'd3; // RGB10
+                    2'b01: fmt_from_input = 3'd4; // YUV44410
+                    default: fmt_from_input = 3'd0; // YUV422/YUV420 -> raw422 slots
+                endcase
+            end
+        end
+    endfunction
+    function [7:0] out_from_input;
+        input [1:0] c;
+        begin
+            if (!AUTO_FORMAT)
+                out_from_input = 8'h05; // fixed 10-bit YUV422 for every input
+            else begin
+                case (c)
+                    2'b00: out_from_input = 8'h01; // RGB, 10-bit
+                    2'b01: out_from_input = 8'h09; // YUV444, 10-bit
+                    default: out_from_input = 8'h05; // YUV422, 10-bit
+                endcase
+            end
+        end
+    endfunction
 
     wire [7:0] op_bank = opaddr[11:8];
     wire [7:0] op_reg  = opaddr[7:0];
     wire       plain_w = (opcode == OP_WRITEF) || (opmask == 8'hFF);
-    wire [7:0] wr_val  = plain_w ? opval : ((rd_val & ~opmask) | opval);
+    wire [7:0] wr_val  = (service_phase == 4'd11) ? csc_data :
+                         (plain_w ? opval : ((rd_val & ~opmask) | opval));
     wire       poll_hit = ((rd_val & opmask) == opval);
     wire       edid_op  = (opcode == OP_EDWR) || (opcode == OP_EDRD);
     wire [31:0] opw     = edid_phase ? scr_rdata : rom_rdata;
+    wire [14:0] meas_height = {1'b0, i2c_rx[5:0], det_vlo};
+    wire [14:0] crop_x_calc = (det_width - 15'd640) >> 1;
+    wire [14:0] crop_y_calc = (meas_height - 15'd640) >> 1;
 
     // EDID byte ROM address = byte index carried in opaddr[7:0]
     assign edid_baddr = opaddr[7:0];
@@ -228,6 +288,15 @@ module init_ctrl #(
             scr_raddr <= 11'd0; edid_phase <= 1'b0; rb_jmp <= 1'b0;
             sysrstn_n <= 1'b0; hpd_assert <= 1'b0; ft601_rstn_n <= 1'b0;
             stream_en <= 1'b0; status_bits <= 16'h0; cmd_soft_rst <= 1'b0;
+            pixel_fmt <= 3'd0;
+            crop_x0 <= 12'd960; crop_y0 <= 12'd400;
+            service_phase <= 4'd0; det_fmt <= 3'd0; det_out <= 8'h05; det_csc <= 2'd0;
+            det_input_fmt <= 2'd0; det_colorimetry <= 2'd0;
+            det_ext_colorimetry <= 3'd0; det_rgb_range <= 2'd0;
+            det_hlo <= 8'd0; det_vlo <= 8'd0; det_width <= 15'd0;
+            csc_index <= 5'd0; csc_sel <= 2'd2;
+            det_crop_valid <= 1'b0;
+            det_changed <= 1'b0; svc_from_online <= 1'b0; detect_done <= 1'b0;
             tms <= 8'd0;
         end else begin
             i2c_wr       <= 1'b0;
@@ -261,6 +330,9 @@ module init_ctrl #(
                     sysrstn_n  <= 1'b0;
                     hpd_assert <= 1'b0;
                     stream_en  <= 1'b0;
+                    pixel_fmt <= 3'd7; // sentinel: force first 0x6B/0x6C configuration
+                    detect_done <= 1'b0;
+                    service_phase <= 4'd0;
                     if (tms == 8'd10) begin tms <= 8'd0; main_st <= M_RST_WAIT; end
                 end
 
@@ -321,7 +393,75 @@ module init_ctrl #(
                                     T_BVAL:   step <= plain_w ? T_START2 : T_BRANCH;
                                     T_RREG:   step <= plain_w ? T_VAL    : T_START3;
                                     T_VAL:    step <= T_VSTOP2;
-                                    T_VSTOP2: main_st <= M_NEXT;
+                                    T_VSTOP2: begin
+                                        if (service_phase == 4'd8) begin
+                                            pixel_fmt <= det_fmt;
+                                            stream_en <= 1'b0;
+                                            service_phase <= 4'd9;
+                                            opcode <= OP_WRITE;
+                                            opaddr <= 12'h06B;
+                                            opmask <= 8'h0F; opval <= det_out;
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd9) begin
+                                            service_phase <= 4'd10;
+                                            opcode <= OP_WRITE;
+                                            opaddr <= 12'h06C;
+                                            opmask <= 8'h03; opval <= {6'd0, det_csc};
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd10) begin
+                                            if (det_csc == 2'd2) begin
+                                                service_phase <= 4'd11;
+                                                csc_index <= 5'd0;
+                                                opcode <= OP_WRITEF;
+                                                opaddr <= 12'h170;
+                                                opmask <= 8'hFF; opval <= csc_data;
+                                            end else begin
+                                                service_phase <= 4'd12;
+                                                opcode <= OP_WRITEF;
+                                                opaddr <= 12'h012;
+                                                opmask <= 8'hFF; opval <= 8'hFF;
+                                            end
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd11) begin
+                                            if (csc_index == 5'd21) begin
+                                                service_phase <= 4'd12;
+                                                opcode <= OP_WRITEF;
+                                                opaddr <= 12'h012;
+                                            end else begin
+                                                csc_index <= csc_index + 5'd1;
+                                                opaddr <= opaddr + 12'd1;
+                                            end
+                                            opmask <= 8'hFF;
+                                            opval <= (csc_index == 5'd21) ? 8'hFF : csc_data;
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd12) begin
+                                            service_phase <= 4'd13;
+                                            opcode <= OP_WRITEF;
+                                            opaddr <= 12'h011;
+                                            opmask <= 8'hFF; opval <= 8'hFF;
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd13) begin
+                                            service_phase <= 4'd14;
+                                            opcode <= OP_WRITEF;
+                                            opaddr <= 12'h010;
+                                            opmask <= 8'hFF; opval <= 8'hFF;
+                                            step <= T_START;
+                                        end else if (service_phase == 4'd14) begin
+                                            service_phase <= 4'd0;
+                                            detect_done <= 1'b1;
+                                            stable_ms <= 8'd0;
+                                            lost_ms <= 8'd0;
+                                            tms <= 8'd0;
+                                            if (svc_from_online && !det_changed && det_crop_valid) begin
+                                                stream_en <= 1'b1;
+                                                main_st <= M_ONLINE;
+                                            end else begin
+                                                main_st <= M_WAIT;
+                                            end
+                                        end else begin
+                                            main_st <= M_NEXT;
+                                        end
+                                    end
                                     T_RX:     begin rd_val <= i2c_rx; step <= T_RSTOP; end
                                     T_RSTOP:  step <= T_START4;
                                     default:  step <= step + 5'd1;
@@ -352,6 +492,7 @@ module init_ctrl #(
                                     case (step)
                                         T_BREG:  step <= T_BSTOP;  // no data byte
                                         T_BSTOP: step <= T_START2;
+                                        T_AW2:   step <= T_RX;      // 0xA9 -> one data byte, no main-chip register phase
                                         T_RX:    begin rd_val <= i2c_rx; step <= T_RSTOP; end
                                         T_RSTOP: begin
                                             if (i2c_ack_err) begin
@@ -366,6 +507,74 @@ module init_ctrl #(
                                         default: step <= step + 5'd1;
                                     endcase
                                 end
+                            end
+                            OP_READ: begin
+                                // Banked AVI/timing reads used by video service.
+                                case (step)
+                                    T_RX: begin
+                                        rd_val <= i2c_rx;
+                                        case (service_phase)
+                                            4'd0: begin // bank2 AVI DB1: Y1/Y0 color format
+                                                det_input_fmt <= i2c_rx[6:5];
+                                                det_fmt <= fmt_from_input(i2c_rx[6:5]);
+                                                det_out <= out_from_input(i2c_rx[6:5]);
+                                                det_csc <= (!AUTO_FORMAT && i2c_rx[6:5] == 2'b00) ? 2'd2 : 2'd0;
+                                            end
+                                            4'd1: det_colorimetry <= i2c_rx[7:6]; // AVI DB2
+                                            4'd2: begin // AVI DB3: extended colorimetry + RGB range
+                                                det_ext_colorimetry <= i2c_rx[6:4];
+                                                det_rgb_range <= i2c_rx[3:2];
+                                            end
+                                            4'd3: begin // AVI DB4 VIC resolves RGB "depends on VIC"
+                                                if (det_rgb_range == 2'd0)
+                                                    det_rgb_range <= (i2c_rx[6:0] >= 7'd2) ? 2'd1 : 2'd2;
+                                            end
+                                            4'd4: det_hlo <= i2c_rx; // bank0 0x9D
+                                            4'd5: begin // bank0 0x9E; YUV420 reports half width
+                                                det_width <= {1'b0, i2c_rx[5:0], det_hlo} <<
+                                                             (det_input_fmt == 2'b11);
+                                            end
+                                            4'd6: det_vlo <= i2c_rx; // bank0 0xA4
+                                            4'd7: begin // bank0 0xA5
+                                                crop_x0 <= crop_x_calc[11:0];
+                                                crop_y0 <= crop_y_calc[11:0];
+                                                det_crop_valid <= (det_width >= 15'd644) &&
+                                                    (meas_height >= 15'd644) &&
+                                                    !det_width[0] && !det_vlo[0];
+                                                det_changed <= (det_fmt != pixel_fmt) ||
+                                                    ({3'd0, crop_x0} != crop_x_calc) ||
+                                                    ({3'd0, crop_y0} != crop_y_calc);
+                                                csc_sel <= {(det_colorimetry == 2'b10),
+                                                            (det_rgb_range == 2'd2)};
+                                            end
+                                            default: ;
+                                        endcase
+                                        step <= T_RSTOP;
+                                    end
+                                    T_RSTOP: begin
+                                        if (service_phase < 4'd7) begin
+                                            service_phase <= service_phase + 4'd1;
+                                            opcode <= OP_READ;
+                                            case (service_phase)
+                                                4'd0: opaddr <= 12'h216; // AVI DB2
+                                                4'd1: opaddr <= 12'h217; // AVI DB3
+                                                4'd2: opaddr <= 12'h218; // AVI DB4 / VIC
+                                                4'd3: opaddr <= 12'h09D; // HActive low
+                                                4'd4: opaddr <= 12'h09E; // HActive high
+                                                4'd5: opaddr <= 12'h0A4; // VActive low
+                                                default: opaddr <= 12'h0A5; // VActive high
+                                            endcase
+                                            opmask <= 8'h00; opval <= 8'h00;
+                                        end else begin
+                                            service_phase <= 4'd8;
+                                            opcode <= OP_WRITE;
+                                            opaddr <= 12'h06E;
+                                            opmask <= 8'h80; opval <= 8'h00; // manual CSC enable
+                                        end
+                                        step <= T_START;
+                                    end
+                                    default: step <= step + 5'd1;
+                                endcase
                             end
                             OP_POLL: begin
                                 case (step)
@@ -414,6 +623,8 @@ module init_ctrl #(
                     init_done <= 1'b1;
                     if (tms >= 8'd10) begin
                         tms <= 8'd0; stable_ms <= 8'd0; lost_ms <= 8'd0;
+                        hpd_assert <= 1'b1;       // EDID is ready: let the source start video
+                        detect_done <= 1'b0;
                         main_st <= M_WAIT;
                     end
                 end
@@ -421,11 +632,16 @@ module init_ctrl #(
                 M_WAIT: begin
                     if (cmd_soft_rst_req) begin
                         main_st <= M_RST_LO;
-                    end else if (stream_ok) begin
+                    end else if (vid_int_event && detect_done) begin
+                        svc_from_online <= 1'b0;
+                        main_st <= M_SVC_START;
+                    end else if (stream_ok && !detect_done) begin
+                        svc_from_online <= 1'b0;
+                        main_st <= M_SVC_START;
+                    end else if (stream_ok && det_crop_valid) begin
                         if (tick_ms) stable_ms <= stable_ms + 8'd1;
                         if (stable_ms >= STABLE_MS) begin
                             stable_ms  <= 8'd0;
-                            hpd_assert <= 1'b1;               // HPD pad LOW
                             stream_en  <= 1'b1;
                             lost_ms    <= 8'd0;
                             main_st    <= M_ONLINE;
@@ -440,7 +656,12 @@ module init_ctrl #(
                         hpd_assert <= 1'b0;
                         stream_en  <= 1'b0;
                         main_st    <= M_RST_LO;
+                    end else if (vid_int_event) begin
+                        stream_en <= 1'b0; // block transitional packets before inspecting AVI
+                        svc_from_online <= 1'b1;
+                        main_st <= M_SVC_START;
                     end else if (!stream_ok) begin
+                        stream_en <= 1'b0; // no transitional/garbage lines while loss is evaluated
                         if (tick_ms) lost_ms <= lost_ms + 8'd1;
                         if (lost_ms >= LOST_MS) begin
                             lost_ms    <= 8'd0;
@@ -450,7 +671,19 @@ module init_ctrl #(
                         end
                     end else begin
                         lost_ms <= 8'd0;
+                        stream_en <= 1'b1; // short telemetry glitches recover without re-init
                     end
+                end
+
+                M_SVC_START: begin
+                    service_phase <= 4'd0;
+                    opcode <= OP_READ;
+                    opaddr <= 12'h215; // bank2 AVI DB1[6:5]: actual input color format
+                    opmask <= 8'h00;
+                    opval <= 8'h00;
+                    rd_val <= 8'h00;
+                    step <= T_START;
+                    main_st <= M_RUN;
                 end
 
                 M_LOST: begin
