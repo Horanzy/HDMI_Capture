@@ -2,15 +2,18 @@
 // ddr3_line_buffer.v -- bounded-latency 128-bit stream buffer for Gowin DDR3 IP
 //
 // One UI command transports one 128-bit word (16 B) and advances the DDR3
-// address by eight 16-bit locations.  The whole 2 Gbit device forms a ring, but
-// backlog_throttle limits new capture packets to a small low-latency backlog.
-// Existing FIFO contents are always drained; the ring never overwrites unread
-// data.  Reads start at READ_WATERMARK words, or immediately for a tail when
-// the input FIFO is empty.  Alternating read/write operations prevent starvation.
+// address by eight 16-bit locations.  The source side uses a two-entry prefetch
+// buffer so writes can issue on consecutive UI cycles.  Reads support multiple
+// outstanding commands and reserve destination-FIFO space at command time.
+// The command channel is still shared, so simultaneous traffic alternates reads
+// and writes; unlike the old POP/WRITE + READ/RWAIT FSM, there is no per-word
+// prefetch or read-latency bubble in the command schedule.
 //
-// This block deliberately does not parse packet headers.  video_stream uses
-// backlog_throttle together with its whole-line reservation to drop new lines
-// before either the small asynchronous FIFO or the DDR ring can overflow.
+// The whole 2 Gbit device forms a ring, but backlog_throttle limits new capture
+// packets to a small low-latency backlog.  Existing FIFO/ring contents drain in
+// order and the write pointer never overwrites unread data.  Reads start at
+// READ_WATERMARK words, or immediately for a tail when the input FIFO is empty.
+// This block deliberately does not parse packet headers.
 // -----------------------------------------------------------------------------
 `timescale 1ns/1ps
 module ddr3_line_buffer #(
@@ -22,21 +25,18 @@ module ddr3_line_buffer #(
     input  wire         rst_n,
     input  wire         init_calib_complete,
 
-    // Registered-read asynchronous input FIFO (video -> UI).
     output wire         src_rd_en,
     input  wire [127:0] src_rd_data,
     input  wire         src_rd_valid,
     input  wire         src_rd_empty,
 
-    // Registered-write asynchronous output FIFO (UI -> USB).
     output wire         dst_wr_en,
     output wire [127:0] dst_wr_data,
     input  wire [10:0]  dst_wr_free_words,
 
-    // Gowin DDR3 controller user interface.
-    output reg  [2:0]   app_cmd,
-    output reg          app_cmd_en,
-    output reg  [27:0]  app_addr,
+    output wire [2:0]   app_cmd,
+    output wire         app_cmd_en,
+    output wire [27:0]  app_addr,
     input  wire         app_cmd_ready,
     output wire [127:0] app_wr_data,
     output wire         app_wr_data_en,
@@ -50,149 +50,131 @@ module ddr3_line_buffer #(
     output wire [24:0]  debug_occupancy
 );
 
-    localparam [2:0] ST_IDLE  = 3'd0;
-    localparam [2:0] ST_POP   = 3'd1;
-    localparam [2:0] ST_WRITE = 3'd2;
-    localparam [2:0] ST_READ  = 3'd3;
-    localparam [2:0] ST_RWAIT = 3'd4;
-
     localparam [24:0] RING_WORDS = (25'd1 << RING_WORDS_LOG2);
     localparam [27:0] ADDR_LAST  = (28'd1 << (RING_WORDS_LOG2 + 3)) - 28'd8;
 
-    reg [2:0]  state;
     reg [27:0] wr_addr, rd_addr;
     reg [24:0] occupancy;
+    reg [10:0] read_pending;
     reg        last_was_write;
 
-    wire write_want = !src_rd_empty && (occupancy < RING_WORDS);
+    // Two entries plus one in-flight FIFO read cover the registered-read
+    // async_fifo_dc latency while allowing one source word per UI cycle.
+    reg [127:0] src_buf0, src_buf1;
+    reg [1:0]   src_count;
+    reg         src_pending;
+
+    wire [2:0] src_total = {1'b0, src_count} + {2'b00, src_pending};
+    wire [2:0] src_limit = 3'd2 + {2'b00, write_fire};
+
+    assign src_rd_en = !src_rd_empty && (src_total < src_limit);
+
+    wire write_available = (src_count != 2'd0) && (occupancy < RING_WORDS);
+    wire write_ready = write_available && app_wr_data_rdy;
+
     wire read_want = (occupancy >= READ_WATERMARK)
                    || (src_rd_empty && (occupancy != 25'd0));
-    wire read_can = read_want && (dst_wr_free_words != 11'd0);
+    wire [24:0] read_unissued = occupancy - {{14{1'b0}}, read_pending};
+    wire read_available = read_want && (read_unissued != 25'd0)
+                        && (dst_wr_free_words > read_pending);
 
-    // Next-state selection uses the post-operation occupancy.  Avoiding an
-    // idle bubble between operations preserves enough throughput at 50 MHz.
-    function [2:0] pick_next;
-        input [24:0] occ_next;
-        input        prefer_read;
-        input        src_empty_next;
-        input        dst_has_room;
-        reg          wr_want_n;
-        reg          rd_want_n;
-        reg          rd_can_n;
-        begin
-            wr_want_n = !src_empty_next && (occ_next < RING_WORDS);
-            rd_want_n = (occ_next >= READ_WATERMARK)
-                      || (src_empty_next && (occ_next != 25'd0));
-            rd_can_n = rd_want_n && dst_has_room;
-            if (prefer_read && rd_can_n)
-                pick_next = ST_READ;
-            else if (!prefer_read && wr_want_n)
-                pick_next = ST_POP;
-            else if (wr_want_n)
-                pick_next = ST_POP;
-            else if (rd_can_n)
-                pick_next = ST_READ;
-            else
-                pick_next = ST_IDLE;
-        end
-    endfunction
+    // If both directions have work, alternate commands.  At UI=100 MHz this
+    // gives each direction ample margin over the default packed 2K144 rate;
+    // if either direction is idle, the other can use every command slot.
+    reg select_write;
+    always @(*) begin
+        if (write_ready && read_available)
+            select_write = !last_was_write;
+        else
+            select_write = write_ready;
+    end
 
-    wire write_fire = (state == ST_WRITE) && app_cmd_ready && app_wr_data_rdy;
-    wire read_fire = (state == ST_READ) && app_cmd_ready;
-    wire dst_fire = (state == ST_RWAIT) && app_rd_data_valid
-                  && (dst_wr_free_words != 11'd0);
+    wire write_fire = select_write && write_ready && app_cmd_ready;
+    wire read_fire  = !select_write && read_available && app_cmd_ready;
+    wire read_return = app_rd_data_valid && init_calib_complete;
 
-    assign src_rd_en = (state == ST_POP) && !src_rd_empty;
-    assign dst_wr_en = dst_fire;
-    assign dst_wr_data = app_rd_data;
-
-    assign app_wr_data = src_rd_data;
-    assign app_wr_data_en = (state == ST_WRITE) && app_cmd_ready && app_wr_data_rdy;
-    assign app_wr_data_end = app_wr_data_en; // one UI word per BL8 command
+    assign app_cmd = select_write ? 3'b000 : 3'b001;
+    assign app_cmd_en = write_fire || read_fire;
+    assign app_addr = select_write ? wr_addr : rd_addr;
+    assign app_wr_data = src_buf0;
+    assign app_wr_data_en = write_fire;
+    assign app_wr_data_end = write_fire; // 1:4 + BL8: one UI word per command
     assign app_wr_data_mask = 16'h0000;
+
+    // Every issued read has reserved one destination-FIFO slot.  The generic
+    // testbench asserts that a return never arrives with zero free slots.
+    assign dst_wr_en = read_return;
+    assign dst_wr_data = app_rd_data;
 
     assign backlog_throttle = (occupancy >= MAX_BACKLOG_WORDS);
     assign debug_occupancy = occupancy;
 
-    // src_rd_valid is expected one cycle after ST_POP.  ST_WRITE necessarily
-    // occurs after that cycle and the FIFO holds rd_data until the next pop.
-    // Keep the signal visible to synthesis/assertion-based simulation without
-    // adding another throughput-reducing wait state.
-    wire unused_ok = &{1'b0, src_rd_valid, app_rd_data_valid};
-
-    always @(*) begin
-        app_cmd = 3'b000;
-        app_cmd_en = 1'b0;
-        app_addr = wr_addr;
-        if (state == ST_WRITE) begin
-            app_cmd = 3'b000;
-            app_cmd_en = app_cmd_ready && app_wr_data_rdy;
-            app_addr = wr_addr;
-        end else if (state == ST_READ) begin
-            app_cmd = 3'b001;
-            app_cmd_en = app_cmd_ready;
-            app_addr = rd_addr;
-        end
-    end
-
     always @(posedge clk_ui or negedge rst_n) begin
         if (!rst_n) begin
-            state <= ST_IDLE;
             wr_addr <= 28'd0;
             rd_addr <= 28'd0;
             occupancy <= 25'd0;
+            read_pending <= 11'd0;
             last_was_write <= 1'b0;
+            src_buf0 <= 128'd0;
+            src_buf1 <= 128'd0;
+            src_count <= 2'd0;
+            src_pending <= 1'b0;
         end else if (!init_calib_complete) begin
-            state <= ST_IDLE;
+            // A recalibration invalidates both DDR contents and outstanding
+            // transactions; restart the ring instead of exposing stale data.
+            wr_addr <= 28'd0;
+            rd_addr <= 28'd0;
+            occupancy <= 25'd0;
+            read_pending <= 11'd0;
             last_was_write <= 1'b0;
+            src_count <= 2'd0;
+            src_pending <= 1'b0;
         end else begin
-            case (state)
-                ST_IDLE: begin
-                    if (last_was_write && read_can)
-                        state <= ST_READ;
-                    else if (!last_was_write && write_want)
-                        state <= ST_POP;
-                    else if (write_want)
-                        state <= ST_POP;
-                    else if (read_can)
-                        state <= ST_READ;
-                end
+            src_pending <= src_rd_en;
 
-                ST_POP: begin
-                    if (!src_rd_empty)
-                        state <= ST_WRITE;
+            case ({src_rd_valid, write_fire})
+                2'b10: begin
+                    if (src_count == 2'd0)
+                        src_buf0 <= src_rd_data;
                     else
-                        state <= ST_IDLE;
+                        src_buf1 <= src_rd_data;
+                    src_count <= src_count + 2'd1;
                 end
-
-                ST_WRITE: begin
-                    if (write_fire) begin
-                        wr_addr <= (wr_addr == ADDR_LAST) ? 28'd0 : wr_addr + 28'd8;
-                        occupancy <= occupancy + 25'd1;
-                        last_was_write <= 1'b1;
-                        state <= pick_next(occupancy + 25'd1, 1'b1,
-                                           src_rd_empty,
-                                           (dst_wr_free_words != 11'd0));
+                2'b01: begin
+                    src_buf0 <= src_buf1;
+                    src_count <= src_count - 2'd1;
+                end
+                2'b11: begin
+                    if (src_count == 2'd1) begin
+                        src_buf0 <= src_rd_data;
+                    end else begin
+                        src_buf0 <= src_buf1;
+                        src_buf1 <= src_rd_data;
                     end
                 end
+                default: begin end
+            endcase
 
-                ST_READ: begin
-                    if (read_fire)
-                        state <= ST_RWAIT;
-                end
+            if (write_fire) begin
+                wr_addr <= (wr_addr == ADDR_LAST) ? 28'd0 : wr_addr + 28'd8;
+                last_was_write <= 1'b1;
+            end
+            if (read_fire) begin
+                rd_addr <= (rd_addr == ADDR_LAST) ? 28'd0 : rd_addr + 28'd8;
+                last_was_write <= 1'b0;
+            end
 
-                ST_RWAIT: begin
-                    if (dst_fire) begin
-                        rd_addr <= (rd_addr == ADDR_LAST) ? 28'd0 : rd_addr + 28'd8;
-                        occupancy <= occupancy - 25'd1;
-                        last_was_write <= 1'b0;
-                        state <= pick_next(occupancy - 25'd1, 1'b0,
-                                           src_rd_empty,
-                                           (dst_wr_free_words > 11'd1));
-                    end
-                end
+            case ({write_fire, read_return})
+                2'b10: occupancy <= occupancy + 25'd1;
+                2'b01: occupancy <= occupancy - 25'd1;
+                default: begin end
+            endcase
 
-                default: state <= ST_IDLE;
+            case ({read_fire, read_return})
+                2'b10: read_pending <= read_pending + 11'd1;
+                2'b01: read_pending <= read_pending - 11'd1;
+                default: begin end
             endcase
         end
     end

@@ -36,7 +36,7 @@
 -en_clkout1 false
 -en_clkout2 true
 -clkout2_bypass false
--odiv2_sel 4
+-odiv2_sel 2
 -clkout2_dt_dir 1
 -clkout2_dt_step 0
 -dyn_pe2_sel false

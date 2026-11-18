@@ -145,7 +145,7 @@ module it68051_capture_top #(
         .clkout0 (ddr_clk_50m),
         .clkout2 (ddr_memory_clk),
         .lock    (ddr_pll_lock),
-        .mdclk   (1'b0)
+        .mdclk   (DDR3_CLK_50M)
     );
 
     // ===================================================== reset generators
@@ -155,6 +155,15 @@ module it68051_capture_top #(
     wire usb_rstn = (por_usb == 12'h0);
     always @(posedge clk_vid) if (!vid_rstn) por_vid <= por_vid - 12'd1;
     always @(posedge clk_usb) if (!usb_rstn) por_usb <= por_usb - 12'd1;
+
+    // The USB POR is safe for asynchronous assertion in the DDR UI domain,
+    // but release must be synchronized to clk_out before resetting UI logic.
+    reg [1:0] ddr_ui_rst_sync = 2'b00;
+    wire ddr_ui_rstn = ddr_ui_rst_sync[1];
+    always @(posedge ddr_ui_clk or negedge usb_rstn) begin
+        if (!usb_rstn) ddr_ui_rst_sync <= 2'b00;
+        else          ddr_ui_rst_sync <= {ddr_ui_rst_sync[0], 1'b1};
+    end
 
     // ===================================================== video input bus
     wire [59:0] qd_raw = {
@@ -379,7 +388,7 @@ module it68051_capture_top #(
         .wr_full      (fifo_wr_full),
         .wr_free_words(fifo_free),
         .rd_clk       (ddr_ui_clk),
-        .rd_rstn      (usb_rstn),
+        .rd_rstn      (ddr_ui_rstn),
         .rd_en        (ddr_src_rd_en),
         .rd_data      (ddr_src_rd_data),
         .rd_valid     (ddr_src_rd_valid),
@@ -388,7 +397,7 @@ module it68051_capture_top #(
 
     async_fifo_dc #(.DW(128), .DEPTH_LOG2(FIFO_LOG2)) u_ddr_rd_fifo (
         .wr_clk       (ddr_ui_clk),
-        .wr_rstn      (usb_rstn),
+        .wr_rstn      (ddr_ui_rstn),
         .wr_en        (ddr_dst_wr_en),
         .wr_data      (ddr_dst_wr_data),
         .wr_full      (),
@@ -403,7 +412,7 @@ module it68051_capture_top #(
 
     ddr3_line_buffer u_ddr_buffer (
         .clk_ui               (ddr_ui_clk),
-        .rst_n                (usb_rstn),
+        .rst_n                (ddr_ui_rstn),
         .init_calib_complete  (ddr_init_done),
         .src_rd_en            (ddr_src_rd_en),
         .src_rd_data          (ddr_src_rd_data),

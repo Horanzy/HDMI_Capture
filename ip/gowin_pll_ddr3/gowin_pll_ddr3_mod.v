@@ -5,7 +5,7 @@
 //Part Number: GW5A-LV25UG324C2/I1
 //Device: GW5A-25
 //Device Version: A
-//Created Time: Wed Nov 18 12:54:20 2026
+//Created Time: Wed Nov 18 14:15:55 2026
 
 module Gowin_PLL_DDR3_MOD (lock, clkout0, clkout2, mdrdo, clkin, reset, mdclk, mdopc, mdainc, mdwdi);
 
@@ -65,7 +65,7 @@ defparam PLLA_inst.IDIV_SEL = 1;
 defparam PLLA_inst.FBDIV_SEL = 1;
 defparam PLLA_inst.ODIV0_SEL = 16;
 defparam PLLA_inst.ODIV1_SEL = 8;
-defparam PLLA_inst.ODIV2_SEL = 4;
+defparam PLLA_inst.ODIV2_SEL = 2;
 defparam PLLA_inst.ODIV3_SEL = 8;
 defparam PLLA_inst.ODIV4_SEL = 8;
 defparam PLLA_inst.ODIV5_SEL = 8;

@@ -7,9 +7,9 @@ create_generated_clock -name clk_vid -source [get_ports {RX_PCLK}] -master_clock
 create_clock -name ddr50_clk -period 20.000 [get_ports {DDR3_CLK_50M}]
 create_clock -name ft601_clk -period 10.000 [get_ports {FT601_CLK}]
 create_generated_clock -name clk_usb -source [get_ports {FT601_CLK}] -master_clock ft601_clk -divide_by 1 [get_pins {u_buf_usb/CLKOUT}]
-# T9 50 MHz -> PLL clkout0 50 MHz (control) and clkout2 200 MHz (DDR PHY).
+# T9 50 MHz -> PLL clkout0 50 MHz (control) and clkout2 400 MHz (DDR PHY).
 create_generated_clock -name ddr_pll_clk50 -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -divide_by 1 [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT0}]
-create_generated_clock -name ddr_memory_clk -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -multiply_by 4 [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT2}]
+create_generated_clock -name ddr_memory_clk -source [get_ports {DDR3_CLK_50M}] -master_clock ddr50_clk -multiply_by 8 [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT2}]
 create_generated_clock -name ddr_ui_clk -source [get_pins {u_ddr_pll/u_pll/PLLA_inst/CLKOUT2}] -master_clock ddr_memory_clk -divide_by 4 [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/fclkdiv/CLKOUT}]
 
 set_false_path -from [get_clocks {clk_vid}] -to [get_clocks {clk_usb}]
@@ -21,11 +21,11 @@ set_false_path -from [get_clocks {clk_usb}] -to [get_clocks {ddr_ui_clk}]
 set_false_path -from [get_clocks {ddr_ui_clk}] -to [get_clocks {clk_usb}]
 
 # Vendor PHY initialization controls are quasi-static and are held stable for
-# many cycles before use.  Exclude only these init/reset pins; all DDR data,
-# command, UI and ordinary reset paths remain timed.
+# many cycles before use.  Exclude the named init controls and the single
+# vendor PHY global async-reset source; DDR data/command/UI paths remain timed.
 set_false_path -from [get_cells {u_ddr3/gw3_top/u_ddr_phy_top/u_ddr_init/read_rclksel_conf*}] -to [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/u_ddr_phy_wds/data_lane_gen[*].u_ddr_phy_data_lane/u_ddr_phy_data_io/u_dqs/HOLD}]
 set_false_path -from [get_cells {u_ddr3/gw3_top/u_ddr_phy_top/u_ddr_init/hold_gen[*].hold_i_s0}] -to [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/u_ddr_phy_wds/data_lane_gen[*].u_ddr_phy_data_lane/u_ddr_phy_data_io/u_dqs/HOLD}]
-set_false_path -from [get_cells {u_ddr3/gw3_top/u_ddr_phy_top/ddr_rsti_reg_2_s0}] -to [get_pins {u_ddr3/gw3_top/u_ddr_phy_top/u_ddr_phy_wds/data_lane_gen[*].u_ddr_phy_data_lane/u_ddr_phy_data_io/u_dqs/RESET}]
+set_false_path -from [get_cells {u_ddr3/gw3_top/u_ddr_phy_top/ddr_rsti_reg_2_s0}]
 
 set_input_delay -clock rx_pclk -max 3.924 [get_ports {RX_DE RX_HSYNC RX_VSYNC}]
 set_input_delay -clock rx_pclk -min 1.810 [get_ports {RX_DE RX_HSYNC RX_VSYNC}]

@@ -7,7 +7,7 @@ create_ipc -name ddr3 -module_name DDR3_Memory_Interface_Top -language Verilog \
 set ddr [get_ips DDR3_Memory_Interface_Top]
 set_property -dict {
     CONFIG.Memory_Type Components
-    CONFIG.Memory_Clock 200
+    CONFIG.Memory_Clock 400
     CONFIG.CLK_Ratio 1:4
     CONFIG.Dq_Width 16
     CONFIG.Dram_Width 16
@@ -57,7 +57,7 @@ set_property -dict {
     CONFIG.CLKOUT1_EN false
     CONFIG.CLKOUT1_FREQ 50
     CONFIG.CLKOUT2_EN true
-    CONFIG.CLKOUT2_FREQ 200
+    CONFIG.CLKOUT2_FREQ 400
     CONFIG.PLL_INIT_CLK_FREQ 50
 } $pll
 report_property $pll

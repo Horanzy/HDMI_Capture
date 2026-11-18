@@ -1,0 +1,15 @@
+DDR3 line-buffer simulation evidence (Icarus Verilog, generic DDR model)
+
+1. ddr3_line_buffer_tb
+   - UI = 100 MHz
+   - multiple outstanding reads, random read delay, random cmd/wr-data backpressure
+   - source bubbles, initial USB stall, throttle and small-ring wrap coverage
+   PASS words=4000 throttle=1 wrap=1
+
+2. ddr3_line_buffer_throughput_tb
+   - UI = 100 MHz, DDR cmd/wr-data always ready, fixed six-cycle read latency
+   - continuous source traffic and continuous USB drain, 1024-word async FIFOs
+   - 20000 sequential 128-bit words checked one by one, multiple ring wraps
+   PASS words=20000 writes=20069 reads=20005 max_occ=67 throttle=0
+
+These are generic-interface simulations, not vendor DDR3 PHY/model or hardware results.

@@ -5,7 +5,7 @@ module ddr3_line_buffer_tb;
 
     reg clk_src = 0, clk_ui = 0, clk_usb = 0;
     always #3.367 clk_src = ~clk_src;
-    always #10 clk_ui = ~clk_ui;
+    always #5 clk_ui = ~clk_ui;
     always #5 clk_usb = ~clk_usb;
 
     reg rst_n = 0;
@@ -131,15 +131,23 @@ module ddr3_line_buffer_tb;
         app_wr_data_rdy <= (($random(seed) & 7) != 0);
     end
 
+    // Multi-outstanding in-order DDR read model.  Each accepted read gets a
+    // random delay, but returns remain ordered as required by the IP guide.
     reg [127:0] mem [0:15];
-    reg read_pending = 0;
-    reg [27:0] read_addr = 0;
-    integer read_delay = 0;
+    reg [27:0] read_addr_q [0:63];
+    integer read_delay_q [0:63];
+    reg [5:0] read_head = 0, read_tail = 0;
+    integer read_count = 0;
+    reg read_return = 0;
+    integer i;
 
     always @(posedge clk_ui) begin
         app_rd_data_valid <= 1'b0;
+        read_return = 1'b0;
         if (!rst_n) begin
-            read_pending <= 1'b0;
+            read_head <= 0;
+            read_tail <= 0;
+            read_count <= 0;
         end else begin
             if (occupancy > 16) begin
                 $display("FAIL occupancy=%0d", occupancy);
@@ -156,22 +164,35 @@ module ddr3_line_buffer_tb;
                 mem[app_addr[6:3]] <= app_wr_data;
             end
             if (app_cmd_en && app_cmd == 3'b001) begin
-                if (read_pending) begin
-                    $display("FAIL multiple outstanding reads");
+                if (read_count >= 63) begin
+                    $display("FAIL read model queue overflow");
                     $fatal(1);
                 end
-                read_pending <= 1'b1;
-                read_addr <= app_addr;
-                read_delay <= ($random(seed) & 7);
-            end else if (read_pending) begin
-                if (read_delay == 0) begin
-                    app_rd_data <= mem[read_addr[6:3]];
+                read_addr_q[read_tail] <= app_addr;
+                read_delay_q[read_tail] <= ($random(seed) & 7);
+                read_tail <= read_tail + 1'b1;
+            end
+
+            if (read_count > 0) begin
+                if (read_delay_q[read_head] == 0) begin
+                    app_rd_data <= mem[read_addr_q[read_head][6:3]];
                     app_rd_data_valid <= 1'b1;
-                    read_pending <= 1'b0;
+                    read_return = 1'b1;
+                    read_head <= read_head + 1'b1;
+                    if (dst_free == 0) begin
+                        $display("FAIL read return exceeded FIFO reservation");
+                        $fatal(1);
+                    end
                 end else begin
-                    read_delay <= read_delay - 1;
+                    read_delay_q[read_head] <= read_delay_q[read_head] - 1;
                 end
             end
+
+            case ({(app_cmd_en && app_cmd == 3'b001), read_return})
+                2'b10: read_count <= read_count + 1;
+                2'b01: read_count <= read_count - 1;
+                default: begin end
+            endcase
         end
     end
 
