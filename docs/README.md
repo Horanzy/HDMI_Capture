@@ -62,7 +62,9 @@ IT68051 FullBusDDR 60bit
   -> 动态居中 640×640
   -> 每两个像素保留 Cb/Y0/Cr/Y1 四个 10bit 样本，共 40bit
   -> 80bit -> 128bit 打包
-  -> 1024×128bit 异步 FIFO
+  -> 1024×128bit 异步 FIFO（视频域到 DDR UI）
+  -> 板载 2Gbit DDR3 低延迟环形缓冲
+  -> 1024×128bit 异步 FIFO（DDR UI 到 USB 域）
   -> 四个低字优先的 32bit FT601 总线字
   -> USB3 Bulk IN
   -> Linux 解包为 16bit 容器，保留全部 10bit 样本
@@ -106,15 +108,23 @@ YUV422 的引脚解释与 RGB 不同。依据 IT68051 数据手册 Table 8-10 / 
 
 STATUS 是 FPGA 每帧主动发送的 16B header-only 包。OUT 命令仅保留 SOFT_RESET；SET_CROP 已删除，GET_STATUS 不需要主动请求。
 
-## 5. FIFO 与带宽结论
+## 5. FIFO、DDR3 与带宽结论
 
-GW5A-25 的 BSRAM 总量为 1008Kbit=126KiB，**存不下 640×640 整帧**：
+GW5A-25 的 BSRAM 总量为 1008Kbit=126KiB，**片上 RAM 存不下 640×640 整帧**：
 
 - 旧 32bit 容器：1,638,400B（1.5625MiB）；
 - 无损 packed YUV42210：1,024,000B（1000KiB）；
 - 8bit UYVY：819,200B（800KiB）。
 
-板卡没有外部帧存，因此不能靠“加大 FIFO 存一帧”解决问题。当前 FIFO 为 1024×128bit=16KiB，只吸收短期时钟/USB 抖动。
+本分支使用核心板 FORESEE F60C1A0002-M6AR（2Gbit、x16）DDR3，但不攒整帧。视频域和 USB 域各保留一只 1024×128bit=16KiB 异步 FIFO，中间 `ddr3_line_buffer.v` 以 128bit/16B 为单位访问整个 DDR3 环形地址空间：
+
+- T9 50MHz 有源晶振输入 PLL；`clkout0=50MHz` 给控制逻辑，`clkout2=200MHz` 给 DDR PHY；FT601 100MHz 不参与 DDR PLL；
+- 1:4、x16、BL8，一条命令传输一个 128bit 字，DDR 地址每次 `+8`；
+- 读出低水位 64 字；输入 FIFO 为空时允许立即排尾；
+- 积压达到 256 字（4KiB）后阻止新行进入，但已进入 FIFO/ring 的数据继续排空，写指针不会覆盖未读数据；
+- 因此默认 packed 通路的理论排队量级约 27.5µs@144Hz、66µs@60Hz，尚未包含全部 FIFO/控制器延迟，也不是实测结果。
+
+DDR3 **不能突破长期平均带宽守恒**，只吸收连续行瞬时写入和短时 USB 抖动。默认 packed 通路含行头平均码率约 62.05MB/s@60Hz、148.93MB/s@144Hz；主机持续吞吐仍须高于该平均值并留有恢复余量。长期停传时本设计有意丢新行，不承诺无限缓冲或任何情况下都不丢帧。`AUTO_FORMAT=1` 的高码率 raw 分支没有因此获得带宽保证。
 
 对本地 2K144 EDID 的 580MHz TMDS、HTotal=2720、VTotal=1481 时序：
 
@@ -123,7 +133,7 @@ GW5A-25 的 BSRAM 总量为 1008Kbit=126KiB，**存不下 640×640 整帧**：
 - 新 1616B 连续行输入约 **344.59MB/s**，低于 FT601 32bit/100MHz 的 400MB/s 理论峰值；
 - 新格式含行头的整帧平均速率约 **148.91MB/s@143.981Hz**。
 
-连续行速率低于峰值只是必要条件，不是持续吞吐保证。FT601 TXE 背压、USB 主机、调度、URB 数量和 libusb 开销仍需长时间真机测量。自动 fmt 0–4 分支仍有高刷新连续行溢出风险。
+连续行速率低于峰值只是必要条件，不是持续吞吐保证。FT601 TXE 背压、USB 主机、调度、URB 数量和 libusb 开销仍需长时间真机测量。
 
 ## 6. Linux 接收与离线测试
 
@@ -154,7 +164,7 @@ python run_flow.py --name packed422_board_est --timeout 100 --stall 30
 
 当前 `constr/timing.sdc` 是 **100MHz 板级估算约束**，采用 150ps/in、70ps 残余失配和约 600ps FT601 往返估算，不是实际叠层/走线 signoff。FT601 DATA 仅施加入延迟，DATA/BE 均施加输出延迟；BE 不采入是因为命令 RTL 不采 BE。
 
-最终默认固定 422 候选：
+`main` 的固定 422 基线候选（无 DDR3）：
 
 - 新鲜综合确认 `PACK_422=1`；`AUTO_FORMAT=1` 分支也单独综合通过；
 - 40 IDDR、39 IODELAY、80 个 I/O register FF、12/56 BSRAM；
@@ -163,17 +173,29 @@ python run_flow.py --name packed422_board_est --timeout 100 --stall 30
 - SHA256：`61520C99F7E2305AFB2B9C937A1C39F7F16222B567E34D0E9227B17EDA3926D6`；
 - 证据：`validation/packed422_board_est/`；bitstream：根目录 `test_packed422.fs`。
 
+`feat/ddr3-line-buffer` 当前候选：
+
+- DDR3 球位按用户提供的 ACG525 CSV 逐项核对 UG324 封装；单端 SSTL15_I、差分 SSTL15D_I，P&R 报告 bank0/1 为 1.5V；
+- 通用缓冲自校验仿真：4000 个 128bit 字全部一致，覆盖随机 ready、输入气泡、USB 停传、throttle 和环形回卷；
+- 36/56 BSRAM；0 setup、0 hold；最差 setup `+0.016ns`、hold `+0.144ns`，其余 recovery 最差 `+0.034ns`；
+- 只对厂商 PHY 初始化模块的准静态 `read_rclksel_conf/hold_i -> DQS HOLD` 和 `ddr_rsti_reg_2 -> DQS RESET` 设置窄范围 false-path，没有屏蔽 DDR 数据路径或整个时钟域；
+- bitstream：7,249,880 bytes；SHA256：`61F394C9D00A7C34A9BE4898F0C6B7726917B8BEA054CB526E81F0E12C4FFAD8`；
+- 证据：`validation/ddr3_bringup/`；bitstream：根目录 `test_ddr3_line_buffer.fs`。
+
+`ip/gen_ips.tcl` 可重新生成当前量产器件的 DDR3/PLL IP。IPUG281 要求 25K 的 `pll_stop` 经 `pll_mDRP_intf` 控制 PLL `clkout2`；当前先将该输出留开以便构建，**上板前仍需按官方参考连接完成并验证，不能把当前候选视为 DDR 初始化已通过**。
+
 综合中的 A_B/B_B 未使用警告对应 YUV422 NC 通道；RX_HSYNC、SIWU_N、WAKEUP_N 未使用是当前功能取舍。`csc_matrix_rom` 的层级 swept 提示已用常数输出对照综合证明会改变网表，不代表矩阵功能被整体删除。上述结果仍不是上板验收。
 
 ## 8. 上板验收顺序
 
-1. I2C ACK、EDID 写完后 HPD 才有效，源端能读到 EDID。
-2. 用灰阶、RGB、黄青品红和高饱和色条核对 Cb/Cr、Y、奇偶像素和行顺序。
-3. 覆盖 1080p、1200p、2K、4K 常见输入及分配器 2K120 工况，检查动态居中和热切换。
-4. 检查 BT.601/709、full/limited、YUV420→422；BT.2020 不支持项不得混入通过结论。
-5. 长时间记录 USB 吞吐、URB 错误、`drop_cnt`、缺行、重同步、CPU 和 FIFO 溢出。
-6. 用可视计时器/LED 或主机时间戳实测端到端延迟，不能由行间隔代替。
-7. 拔插 HDMI、源重启、I2C NACK、USB 重新枚举、SOFT_RESET，检查恢复。
-8. 自动分支需另行构建并验证格式切换；不能把默认分支结果套用到 fmt 0–4。
+1. 完成 `pll_stop/mDRP` 参考连接，确认 DDR PLL lock、`init_calib_complete`、读写校验和持续吞吐，再做采集联调。
+2. I2C ACK、EDID 写完后 HPD 才有效，源端能读到 EDID。
+3. 用灰阶、RGB、黄青品红和高饱和色条核对 Cb/Cr、Y、奇偶像素和行顺序。
+4. 覆盖 1080p、1200p、2K、4K 常见输入及分配器 2K120 工况，检查动态居中和热切换。
+5. 检查 BT.601/709、full/limited、YUV420→422；BT.2020 不支持项不得混入通过结论。
+6. 长时间记录 USB 吞吐、URB 错误、`drop_cnt`、缺行、重同步、CPU 和 FIFO 溢出。
+7. 用可视计时器/LED 或主机时间戳实测端到端延迟，不能由行间隔代替。
+8. 拔插 HDMI、源重启、I2C NACK、USB 重新枚举、SOFT_RESET，检查恢复。
+9. 自动分支需另行构建并验证格式切换；不能把默认分支结果套用到 fmt 0–4。
 
-完整 RTL/门级仿真、真实 USB 持续吞吐、颜色、热插拔和端到端延迟尚未完成，当前 bitstream 只能称为**估算约束下的候选固件**。
+完整 RTL/门级仿真、真实 DDR3 初始化/读写、真实 USB 持续吞吐、颜色、热插拔和端到端延迟尚未完成，当前 bitstream 只能称为**估算约束下的候选固件**。

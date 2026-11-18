@@ -104,7 +104,25 @@ module it68051_capture_top #(
     output wire FT601_OE_N,
     input  wire FT601_SIWU_N,            // reserved (ext 10k pullup), unused
     output wire FT601_RESET_N,
-    input  wire FT601_WAKEUP_N           // USB suspend flag, unused in v1
+    input  wire FT601_WAKEUP_N,          // USB suspend flag, unused in v1
+
+    // T9 50 MHz oscillator and FORESEE 2 Gbit x16 DDR3L
+    input  wire         DDR3_CLK_50M,
+    output wire [13:0]  DDR3_A,
+    output wire [2:0]   DDR3_BA,
+    output wire         DDR3_CKE,
+    output wire         DDR3_CS_N,
+    output wire         DDR3_RAS_N,
+    output wire         DDR3_CAS_N,
+    output wire         DDR3_WE_N,
+    output wire         DDR3_RESET_N,
+    output wire         DDR3_ODT,
+    output wire [1:0]   DDR3_DM,
+    inout  wire [15:0]  DDR3_DQ,
+    inout  wire [1:0]   DDR3_DQS_P,
+    inout  wire [1:0]   DDR3_DQS_N,
+    output wire         DDR3_CK_P,
+    output wire         DDR3_CK_N
 );
 
     // ===================================================== clock buffering
@@ -117,6 +135,18 @@ module it68051_capture_top #(
     wire clk_usb;                          // 100 MHz from FT601
     DCE u_buf_vid (.CLKIN(RX_PCLK),   .CE(1'b1), .CLKOUT(clk_vid));
     DCE u_buf_usb (.CLKIN(FT601_CLK), .CE(1'b1), .CLKOUT(clk_usb));
+
+    // DDR3 clocks are independent of FT601: T9 50 MHz oscillator -> PLL.
+    // GW5A requires the DDR PHY memory_clk to come from PLL clkout2.
+    wire ddr_clk_50m, ddr_memory_clk, ddr_pll_lock;
+    wire ddr_ui_clk, ddr_init_done, ddr_pll_stop, ddr_phy_rst;
+    Gowin_PLL_DDR3 u_ddr_pll (
+        .clkin   (DDR3_CLK_50M),
+        .clkout0 (ddr_clk_50m),
+        .clkout2 (ddr_memory_clk),
+        .lock    (ddr_pll_lock),
+        .mdclk   (1'b0)
+    );
 
     // ===================================================== reset generators
     (* keep *) reg [11:0] por_vid = 12'hFFF;
@@ -172,12 +202,31 @@ module it68051_capture_top #(
     wire       vid_act_edge;
     wire       htot_ok_u, stab_u;
 
-    // ===================================================== line FIFO wires
+    // ===================================================== DDR3 stream FIFO wires
     wire        fifo_wr_en, fifo_wr_full;
     wire [10:0] fifo_free;
     wire [127:0] fifo_wr_data;
+
+    wire        ddr_src_rd_en, ddr_src_rd_valid, ddr_src_rd_empty;
+    wire [127:0] ddr_src_rd_data;
+    wire        ddr_dst_wr_en;
+    wire [127:0] ddr_dst_wr_data;
+    wire [10:0]  ddr_dst_free;
+    wire        ddr_throttle_ui;
+    wire [24:0] ddr_debug_occupancy;
+    reg  [1:0]  ddr_throttle_vsync;
+    reg  [1:0]  ddr_ready_usync;
+
     wire        fifo_rd_en, fifo_rd_valid, fifo_rd_empty;
     wire [127:0] fifo_rd_data;
+
+    wire [2:0]   ddr_app_cmd;
+    wire         ddr_app_cmd_en, ddr_app_cmd_ready;
+    wire [27:0]  ddr_app_addr;
+    wire [127:0] ddr_app_wr_data, ddr_app_rd_data;
+    wire         ddr_app_wr_en, ddr_app_wr_end, ddr_app_wr_rdy;
+    wire         ddr_app_rd_valid;
+    wire [15:0]  ddr_app_wr_mask;
 
     // ===================================================== FT601 bus wires
     wire [31:0] wr_o_data;
@@ -220,7 +269,7 @@ module it68051_capture_top #(
             for (si = 0; si < 16; si = si + 1) s_st[si] <= 2'b00;
             for (si = 0; si < 3; si = si + 1) s_fmt[si] <= 2'b00;
         end else begin
-            sync_en_q <= {sync_en_q[0], stream_en};
+            sync_en_q <= {sync_en_q[0], stream_en & ddr_ready_usync[1]};
             for (si = 0; si < 12; si = si + 1) begin
                 s_x0[si] <= {s_x0[si][0], crop_x0[si]};
                 s_y0[si] <= {s_y0[si][0], crop_y0[si]};
@@ -245,6 +294,17 @@ module it68051_capture_top #(
             assign pixel_fmt_v[gi] = s_fmt[gi][1];
         end
     endgenerate
+
+    // DDR readiness gates new capture packets; backlog is a slow level and is
+    // synchronized before it participates in video-domain line reservation.
+    always @(posedge clk_vid or negedge vid_rstn) begin
+        if (!vid_rstn) ddr_throttle_vsync <= 2'b00;
+        else           ddr_throttle_vsync <= {ddr_throttle_vsync[0], ddr_throttle_ui};
+    end
+    always @(posedge clk_usb or negedge usb_rstn) begin
+        if (!usb_rstn) ddr_ready_usync <= 2'b00;
+        else           ddr_ready_usync <= {ddr_ready_usync[0], ddr_init_done};
+    end
 
     // video -> USB: activity toggle + level telemetry
     always @(posedge clk_vid or negedge vid_rstn) begin
@@ -307,22 +367,113 @@ module it68051_capture_top #(
         .wr_en        (fifo_wr_en),
         .wr_data      (fifo_wr_data),
         .wr_full      (fifo_wr_full),
-        .wr_free_words(fifo_free)
+        .wr_free_words(fifo_free),
+        .ddr_throttle (ddr_throttle_vsync[1])
     );
 
-    async_fifo_dc #(.DW(128), .DEPTH_LOG2(FIFO_LOG2)) u_linefifo (
+    async_fifo_dc #(.DW(128), .DEPTH_LOG2(FIFO_LOG2)) u_ddr_wr_fifo (
         .wr_clk       (clk_vid),
         .wr_rstn      (vid_rstn),
         .wr_en        (fifo_wr_en),
         .wr_data      (fifo_wr_data),
         .wr_full      (fifo_wr_full),
         .wr_free_words(fifo_free),
+        .rd_clk       (ddr_ui_clk),
+        .rd_rstn      (usb_rstn),
+        .rd_en        (ddr_src_rd_en),
+        .rd_data      (ddr_src_rd_data),
+        .rd_valid     (ddr_src_rd_valid),
+        .rd_empty     (ddr_src_rd_empty)
+    );
+
+    async_fifo_dc #(.DW(128), .DEPTH_LOG2(FIFO_LOG2)) u_ddr_rd_fifo (
+        .wr_clk       (ddr_ui_clk),
+        .wr_rstn      (usb_rstn),
+        .wr_en        (ddr_dst_wr_en),
+        .wr_data      (ddr_dst_wr_data),
+        .wr_full      (),
+        .wr_free_words(ddr_dst_free),
         .rd_clk       (clk_usb),
         .rd_rstn      (usb_rstn),
         .rd_en        (fifo_rd_en),
         .rd_data      (fifo_rd_data),
         .rd_valid     (fifo_rd_valid),
         .rd_empty     (fifo_rd_empty)
+    );
+
+    ddr3_line_buffer u_ddr_buffer (
+        .clk_ui               (ddr_ui_clk),
+        .rst_n                (usb_rstn),
+        .init_calib_complete  (ddr_init_done),
+        .src_rd_en            (ddr_src_rd_en),
+        .src_rd_data          (ddr_src_rd_data),
+        .src_rd_valid         (ddr_src_rd_valid),
+        .src_rd_empty         (ddr_src_rd_empty),
+        .dst_wr_en            (ddr_dst_wr_en),
+        .dst_wr_data          (ddr_dst_wr_data),
+        .dst_wr_free_words    (ddr_dst_free),
+        .app_cmd              (ddr_app_cmd),
+        .app_cmd_en           (ddr_app_cmd_en),
+        .app_addr             (ddr_app_addr),
+        .app_cmd_ready        (ddr_app_cmd_ready),
+        .app_wr_data          (ddr_app_wr_data),
+        .app_wr_data_en       (ddr_app_wr_en),
+        .app_wr_data_end      (ddr_app_wr_end),
+        .app_wr_data_mask     (ddr_app_wr_mask),
+        .app_wr_data_rdy      (ddr_app_wr_rdy),
+        .app_rd_data          (ddr_app_rd_data),
+        .app_rd_data_valid    (ddr_app_rd_valid),
+        .backlog_throttle     (ddr_throttle_ui),
+        .debug_occupancy      (ddr_debug_occupancy)
+    );
+
+    reg [3:0] ddr_rst_sync;
+    always @(posedge ddr_clk_50m or negedge usb_rstn) begin
+        if (!usb_rstn) ddr_rst_sync <= 4'b0000;
+        else           ddr_rst_sync <= {ddr_rst_sync[2:0], 1'b1};
+    end
+
+    DDR3_Memory_Interface_Top u_ddr3 (
+        .clk                 (ddr_clk_50m),
+        .pll_stop            (ddr_pll_stop),
+        .memory_clk          (ddr_memory_clk),
+        .pll_lock            (ddr_pll_lock),
+        .rst_n               (ddr_rst_sync[3]),
+        .clk_out             (ddr_ui_clk),
+        .ddr_rst             (ddr_phy_rst),
+        .init_calib_complete (ddr_init_done),
+        .cmd_ready           (ddr_app_cmd_ready),
+        .cmd                 (ddr_app_cmd),
+        .cmd_en              (ddr_app_cmd_en),
+        .addr                (ddr_app_addr),
+        .wr_data_rdy         (ddr_app_wr_rdy),
+        .wr_data             (ddr_app_wr_data),
+        .wr_data_en          (ddr_app_wr_en),
+        .wr_data_end         (ddr_app_wr_end),
+        .wr_data_mask        (ddr_app_wr_mask),
+        .rd_data             (ddr_app_rd_data),
+        .rd_data_valid       (ddr_app_rd_valid),
+        .rd_data_end         (),
+        .sr_req              (1'b0),
+        .ref_req             (1'b0),
+        .sr_ack              (),
+        .ref_ack             (),
+        .burst               (1'b1),
+        .O_ddr_addr          (DDR3_A),
+        .O_ddr_ba            (DDR3_BA),
+        .O_ddr_cs_n          (DDR3_CS_N),
+        .O_ddr_ras_n         (DDR3_RAS_N),
+        .O_ddr_cas_n         (DDR3_CAS_N),
+        .O_ddr_we_n          (DDR3_WE_N),
+        .O_ddr_clk           (DDR3_CK_P),
+        .O_ddr_clk_n         (DDR3_CK_N),
+        .O_ddr_cke           (DDR3_CKE),
+        .O_ddr_odt           (DDR3_ODT),
+        .O_ddr_reset_n       (DDR3_RESET_N),
+        .O_ddr_dqm           (DDR3_DM),
+        .IO_ddr_dq           (DDR3_DQ),
+        .IO_ddr_dqs          (DDR3_DQS_P),
+        .IO_ddr_dqs_n        (DDR3_DQS_N)
     );
 
     // ===================================================== FT601

@@ -45,7 +45,8 @@ module video_stream #(
     output reg          wr_en,
     output reg  [127:0] wr_data,
     input  wire         wr_full,
-    input  wire [10:0]  wr_free_words
+    input  wire [10:0]  wr_free_words,
+    input  wire         ddr_throttle
 );
 
     localparam [2:0] FMT_UYVY8 = 3'd0;
@@ -195,7 +196,7 @@ module video_stream #(
     wire [11:0] crop_r_end = {2'b0, x0_q[11:2]} + 12'd160;
     wire crop_fits = (de_w_q >= crop_r_end);
     wire [10:0] reserve_words = LINE_WORDS + 11'd4 + (eolf ? 11'd1 : 11'd0);
-    wire fifo_room = (wr_free_words >= reserve_words);
+    wire fifo_room = (wr_free_words >= reserve_words) && !ddr_throttle;
     reg  fifo_room_q;
     always @(posedge clk_vid or negedge rstn) begin
         if (!rstn) fifo_room_q <= 1'b0;
