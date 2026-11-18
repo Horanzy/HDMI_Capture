@@ -2,9 +2,11 @@
 # Assumption: 150ps/in. +/-400mil residual mismatch -> conservative 70ps.
 # Same-direction video/FT601 inputs: common clock/data delay cancels; +/-70ps remains.
 # FT601 outputs: 2000mil clock to FPGA + matched data return -> C+D about 600ps.
-create_clock -name rx_pclk -period 6.734 [get_ports {RX_PCLK}]
+# Intentional P&R overconstraint: video +1.4%, DDR clocks +5%.
+# Actual hardware remains RX_PCLK<=148.5MHz and T9/PLL/DDR/UI=50/400/100MHz.
+create_clock -name rx_pclk -period 6.640 [get_ports {RX_PCLK}]
 create_generated_clock -name clk_vid -source [get_ports {RX_PCLK}] -master_clock rx_pclk -divide_by 1 [get_pins {u_buf_vid/CLKOUT}]
-create_clock -name ddr50_clk -period 20.000 [get_ports {DDR3_CLK_50M}]
+create_clock -name ddr50_clk -period 19.048 [get_ports {DDR3_CLK_50M}]
 create_clock -name ft601_clk -period 10.000 [get_ports {FT601_CLK}]
 create_generated_clock -name clk_usb -source [get_ports {FT601_CLK}] -master_clock ft601_clk -divide_by 1 [get_pins {u_buf_usb/CLKOUT}]
 # T9 50 MHz -> PLL clkout0 50 MHz (control) and clkout2 400 MHz (DDR PHY).

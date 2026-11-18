@@ -166,7 +166,7 @@ python run_flow.py --name packed422_board_est --timeout 100 --stall 30
 
 隔离自动测试使用 100 秒总超时、CST 解析后 30 秒无进展判定 stalled，只终止本轮 `gw_sh` 进程树。
 
-当前 `constr/timing.sdc` 是 **100MHz 板级估算约束**，采用 150ps/in、70ps 残余失配和约 600ps FT601 往返估算，不是实际叠层/走线 signoff。FT601 DATA 仅施加入延迟，DATA/BE 均施加输出延迟；BE 不采入是因为命令 RTL 不采 BE。
+当前 `constr/timing.sdc` 的板级 I/O 数值是 **100MHz 估算约束**，采用 150ps/in、70ps 残余失配和约 600ps FT601 往返估算，不是实际叠层/走线 signoff。FT601 DATA 仅施加入延迟，DATA/BE 均施加输出延迟；BE 不采入是因为命令 RTL 不采 BE。为给 P&R 留优化余量，时钟目标有意过约束为视频 150.602MHz、T9 52.499MHz（派生 UI 104.998MHz）；**实际硬件仍按视频不超过 148.5MHz、T9/PLL/DDR/UI=50/400/100MHz 工作，不是把板钟超频**。`run_pnr.tcl` 显式固定 `place_option=0`、`route_option=0` 和 hold 修复，避免工具复用上次试验状态。
 
 `main` 的固定 422 基线候选（无 DDR3）：
 
@@ -183,10 +183,10 @@ python run_flow.py --name packed422_board_est --timeout 100 --stall 30
 - 官方 `pll_mDRP_intf` 和 50/400MHz 外引 MD wrapper 已接入；综合未出现 mDRP/PLL 初始化模块被 swept 的提示；UI 侧复位释放由 `ddr_ui_rst_sync` 同步；
 - 通用缓冲自校验仿真：4000 个 128bit 字全部一致，覆盖多 outstanding、随机 ready、输入气泡、USB 停传、throttle 和环形回卷；
 - 持续满速仿真：20000 字逐一比对通过，20069 次写 + 20005 次读，最高积压 67 字、未触发 throttle，覆盖多次环形回卷；这是理想 DDR ready/固定 6 拍读延迟模型，不是真实 DRAM 总线效率证明；
-- 36/56 BSRAM；0 setup、0 hold 违例，报告各分段无负 slack；最差 setup `+0.019ns`、hold `+0.143ns`，UI Fmax 约 100.783MHz，余量很小；
+- 36/56 BSRAM；在视频 150.602MHz、UI 104.998MHz 过约束下 0 setup、0 hold 违例；最差 setup `+0.032ns`、hold `+0.143ns`；实际 Fmax 为视频 151.334MHz、UI 105.526MHz，相对实际工作目标频率余量约 1.9%/5.5%；
 - false-path 仅用于指定的厂商 PHY 准静态初始化控制、单一 `ddr_rsti_reg_2` 全局异步复位源，以及 `pll_stop` 到第一级 50MHz 同步器的异步采样路径；没有屏蔽 DDR 数据路径或整个时钟域；
-- bitstream：7,034,872 bytes；SHA256：`8A65D450988C52861152692FD6B6D8BCBB44F3AFA8138079F6513ED26D35BB5A`；
-- 证据：`validation/ddr3_mdrp_release/`；bitstream：根目录 `test_ddr3_line_buffer.fs`。
+- bitstream：7,034,872 bytes；SHA256：`04437E69585D76D0EA10B5E39EB4704633C47B7E8E8B3C57E7B7D38051665650`；
+- 证据：`validation/ddr3_mdrp_over5/`；bitstream：根目录 `test_ddr3_line_buffer.fs`。当前工具没有随机 seed 参数；布局 1–4、布线 1–2 与过约束组合的对比见该目录 `comparison.txt`，最终选择默认布局/布线 0/0 + 过约束。
 
 `ip/gen_ips.tcl` 只重新生成 DDR3 PHY。PLL 使用随工程保存的官方第38章 GW5A-25 外引 MD wrapper 和对应 IPC，静态参数为 FCLKIN=50MHz、VCO=800MHz、`ODIV0=16`、`ODIV2=2`；当前 1.9.11.03 工具读取该旧版 IPC 时会异常退出，因此不让脚本自动覆盖这份已核对的 wrapper。`pll_stop/mDRP` 设计链已经闭合，但真实 PLL lock、DDR 初始化和校准仍必须上板验证。
 

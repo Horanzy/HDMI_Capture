@@ -1,0 +1,18 @@
+Gowin V1.9.11.03 P&R strategy comparison (same RTL, same pins, hold repair on)
+The installed tool exposes no random-seed option. place_option 1-4 and
+route_option 1-2 were therefore compared with the default place/route 0/0.
+
+run                  place route  video/UI target MHz  min setup  min hold  video Fmax  UI Fmax   result
+baseline               0     0     148.500/100.000       +0.019     +0.143    148.914    100.783  pass
+pnr_place1             1     0     148.500/100.000       +0.002     +0.139    148.533    100.072  pass, worse
+pnr_place2             2     0     148.500/100.000       -0.739     +0.143    148.771    101.301  16 setup violations
+pnr_place3             3     0     148.500/100.000       -1.622     +0.144    148.588    102.095  16 setup violations
+pnr_place4             4     0     148.500/100.000       +0.009     +0.139    148.693    100.300  pass, worse
+pnr_over5_place0       0     0     150.602/104.998       +0.032     +0.143    151.334    105.526  SELECTED
+pnr_over5_route1       0     1     150.602/104.998       +0.015     +0.143    152.660    105.166  pass, lower UI/setup margin
+pnr_over5_route2       0     2     150.602/104.998       -0.204     +0.144    151.670    105.761  8 setup violations
+
+Overconstraint is an optimization target only. Actual hardware/PLL clocks are
+unchanged: RX_PCLK <=148.5 MHz, T9=50 MHz, DDR memory=400 MHz, UI=100 MHz.
+The selected configuration passes the stricter 150.602 MHz video and
+104.998 MHz UI constraints with zero setup/hold violated endpoints.

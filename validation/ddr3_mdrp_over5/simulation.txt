@@ -1,0 +1,7 @@
+Random/multi-outstanding model: PASS words=4000 throttle=1 wrap=1
+Sustained full-rate model: PASS words=20000 writes=20069 reads=20005 max_occ=67 throttle=0
+
+These tests use the generic DDR command/data model (random ready/latency in the
+random test; always-ready commands and fixed six-cycle read latency in the
+full-rate test). They do not prove real DDR3 initialization, calibration,
+DRAM bus efficiency, USB sustained throughput, or end-to-end latency.
